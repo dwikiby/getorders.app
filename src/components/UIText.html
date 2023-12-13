@@ -1,0 +1,20 @@
+<script>
+   import { isInputError } from '../Helper.js';
+  import { createEventDispatcher } from 'svelte';
+  const dispatch = createEventDispatcher();
+  export var value = "", placeholder, name = "", field, style = {};
+  var border = 'border-gray'
+  function keyup(e) {
+   $isInputError[name.toLowerCase()] = false
+    dispatch('keyup', e)
+  }
+  $:{
+      $isInputError[name.toLowerCase()] ? border = 'border-orange' : border = 'border-gray'
+   }
+</script>
+<div class="text-sm text-gray-800 font-semibold my-1 capitalize">{name}</div>
+<div class="border {border}-200 focus-within:{border}-200 rounded-md text-sm p-2 mb-2 bg-white flex">
+  <input bind:this="{field}" class="flex-grow focus:outline-none {style.input}" type="text"
+    placeholder="{placeholder || name}" bind:value="{value}" on:keyup="{keyup}" disabled="{style.input &&
+    style.input.includes('disabled')}" />
+</div>

@@ -1,0 +1,70 @@
+<script>
+  import ModalView from './components/ModalView.html'
+  import Product from './Product.html'
+  var calc = [[7, 8, 9], [4, 5, 6], [1, 2, 3]]
+  var abc = [["G", "H", "I"], ["D", "E", "F"], ["A", "B", "C"]]
+  import { clone, modal, prod_list, close } from './Helper.js';
+  var keys = "", placeholder = ""
+  $: {
+    placeholder = ""
+    var len = 4 - keys.length
+    if (len > 0) {
+      for (var i = 0; i < len; i++) {
+        placeholder += "∙"
+      }
+    }
+
+  }
+  var current_keys = calc
+  function toggle() {
+    current_keys = current_keys == calc ? abc : calc
+  }
+  function add(key) {
+    keys += key
+    search()
+  }
+  function clear() {
+    keys = ""
+  }
+  function search() {
+    var filtered = $prod_list.filter(p => {
+      var variant = p.variants.filter(v => v.code == keys)
+      if (variant.length > 0) return p
+    })
+    if (filtered.length > 0) {
+      var product = clone(filtered[0])
+      product.variant = product.variants.filter(v => v.code == keys)
+
+      $modal = { view: Product, product }
+    }
+  }
+</script>
+<ModalView>
+  <div slot="title" class="text-center font-semibold text-lg text-gray-600 my-3">
+    Enter Item Code From Menu
+  </div>
+  <div slot="content">
+    <div class="text-5xl tracking-widest text-gray-600 text-center">
+      {keys}{placeholder}
+    </div>
+    {#each current_keys as rows}
+    
+  <div class="text-3xl text-white flex justify-center my-2">
+    {#each rows as key}
+    <button class="bg-gray-500 rounded-full w-24 h-24 mx-2" on:click="{ ()=>add(key)}">{key}</button>
+    {/each}
+  </div>
+    {/each}
+
+  <div class="text-3xl text-white flex justify-center my-2">
+    <button class="bg-gray-500 text-xl rounded-full w-24 h-24 mx-2" on:click="{toggle}">{ current_keys==calc ? 'ABC' : 'NUM'}</button>
+    <button class="bg-gray-500 rounded-full w-24 h-24 mx-2" on:click="{ ()=>add(0)}">0</button>
+    <button class="bg-gray-500 text-xl rounded-full w-24 h-24 mx-2" on:click="{clear}">CLR</button>
+  </div>
+  </div>
+  <div slot="toolbar" class="flex-none bg-white p-3">
+    <button class="w-full px-2 bg-gray-400 rounded-lg capitalize font-bold h-full text-white" on:click="{close}">
+      Cancel
+    </button>
+  </div>
+</ModalView>

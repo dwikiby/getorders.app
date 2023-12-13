@@ -1,0 +1,175 @@
+<script>
+  import { fly, fade } from "svelte/transition";
+  import { quintInOut } from "svelte/easing";
+  import Product from "./Product.html";
+  import ListItem from "./components/UIListItem.html";
+  import {
+    modal,
+    prod_list,
+    tag_list,
+    tag_id,
+    clone,
+    session,
+    isVisible,
+  } from "./Helper.js";
+  import { onMount } from "svelte";
+  var listView,
+    sections = [],
+    tabs = [],
+    current_section;
+
+  function prod_for(tag) {
+    var list = $prod_list.filter((prod) =>
+      prod.tags.some((t) => t.id == tag.id && !t.hidden_products)
+    );
+
+    var priority_list = [
+      ...list.filter((p) => p.media_urls.length > 0),
+      ...list.filter((p) => p.media_urls.length == 0),
+    ];
+    priority_list = priority_list.sort(function (a, b) {
+      var names = { a: a.code || a.name, b: b.code || b.name };
+      if (names.a < names.b) {
+        return -1;
+      }
+      if (names.a > names.b) {
+        return 1;
+      }
+      return 0;
+    });
+    return priority_list;
+  }
+  function prod_image(prod) {
+    if (prod.media_urls.length > 0) {
+    
+      return `background-image:url(${prod.media_urls[0].original})`;
+    } else {
+      return "";
+    }
+  }
+  var scrollTimer,
+    lastScrollFireTime = 0;
+  function scroll(e) {
+    var minScrollTime = 500;
+    var now = new Date().getTime();
+    if (!scrollTimer) {
+      if (now - lastScrollFireTime > 3 * minScrollTime) {
+        processScroll(); // fire immediately on first scroll
+        lastScrollFireTime = now;
+      }
+      scrollTimer = setTimeout(function () {
+        scrollTimer = null;
+        lastScrollFireTime = new Date().getTime();
+        processScroll();
+      }, minScrollTime);
+    }
+  }
+  function processScroll() {
+    //Find section that is visible
+    current_section = "";
+
+    $tag_list.forEach((t) => {
+      var tag = "" + t.id,
+        s = sections[tag];
+      if (isVisible(s)) {
+        current_section = tag;
+      }
+    });
+    if (current_section != "") tabs[current_section].scrollIntoView();
+  }
+  onMount(() => {
+    // console.log("session", $session);
+    processScroll();
+    tag_id.subscribe((value) => {
+      if (sections[value]) {
+        sections[value].scrollIntoView();
+      }
+    });
+  });
+</script>
+
+<div class="
+    h-12
+    md:h-20
+    flex-none flex flex-no-wrap
+    bg-white
+    overflow-x-scroll
+    scrollbar-w-2
+    scrollbar-track-gray-lighter
+    scrollbar-thumb-rounded
+    scrollbar-thumb-gray
+    scrolling-touch
+    shadow-md
+  ">
+  {#each $tag_list as t,i}
+  <button bind:this="{tabs[''+t.id]}"
+    on:mousedown="{ ()=> { current_section=''+t.id; sections[''+t.id].scrollIntoView(); } }" class="
+      flex-none
+      {
+      current_section==''+t.id
+      ?
+      `border-b-2
+      text-theme`
+      :
+      'text-gray-700'
+      }
+      border-theme
+      min-w-8
+      mx-1
+      text-sm
+      self-center
+    ">
+    {t.name.replace(/.*\./gim, '')}
+  </button>
+  {/each}
+</div>
+<div on:scroll|passive="{scroll}" class="
+    flex-grow
+    overflow-y-auto
+    w-full
+    scrollbar-w-2
+    scrollbar-track-gray-lighter
+    scrollbar-thumb-rounded
+    scrollbar-thumb-gray
+  ">
+  {#if $session.custom_message}
+  <div on:scroll|passive="{scroll}" class="
+      flex-grow
+      overflow-y-auto
+      w-full
+      scrollbar-w-2
+      scrollbar-track-gray-lighter
+      scrollbar-thumb-rounded
+      scrollbar-thumb-gray
+    ">
+    <div class="bg-gray mt-3 clearfix">
+      <p class="text-center m-2">{$session.custom_message}</p>
+    </div>
+  </div>
+  {/if} {#each $tag_list as t,i}
+  <div class="bg-white my-2 py-3 clearfix { i==$tag_list.length-1 ? 'pb-20' : ''}" bind:this="{sections[''+t.id]}">
+    <h2 class="px-3 font-bold text-xl text-theme">
+      {t.name.replace(/.*\./gim, '')}
+    </h2>
+    {#each prod_for(t) as prod}
+    <ListItem type="{$session.list_style}" product="{prod}"
+      on:click="{(e) => $modal = { view : Product, product : clone(e.detail)}}" />
+    {/each}
+  </div>
+  {/each} {#if $session.policy}
+  <div on:scroll|passive="{scroll}" class="
+      flex-grow
+      overflow-y-auto
+      w-full
+      scrollbar-w-2
+      scrollbar-track-gray-lighter
+      scrollbar-thumb-rounded
+      scrollbar-thumb-gray
+    ">
+    <div class="bg-white my-2 py-3 clearfix">
+      <h2 class="px-3 font-bold text-xl text-theme">Policy</h2>
+      <p class="text-center">{$session.policy}</p>
+    </div>
+  </div>
+  {/if}
+</div>

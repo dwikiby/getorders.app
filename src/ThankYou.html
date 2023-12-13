@@ -1,0 +1,39 @@
+<script>
+  import { fly, fade } from 'svelte/transition';
+  import { quintInOut } from 'svelte/easing';
+  import { modal, session, api, headers } from './Helper.js';
+  export var invoice_id = "";
+  var outlet = "", load_products = false;
+</script>
+<div class="bg-white flex flex-col absolute w-full h-full z-50"
+  transition:fly="{{ opacity : 0, y : 300, duration : 1000, easing : quintInOut }}">
+  <div class="flex-grow"></div>
+  <div class="flex-none text-center">
+    <div transition:fly="{{ y : 100}}">
+      <p class="font-semibold text-lg text-gray-500 my-3">
+        Thanks for Ordering From
+      </p>
+      <p class="font-semibold text-2xl text-gray-700 my-3">
+        {$session.name}
+      </p>
+      <button class="mt-3 w-3/4 px-2 bg-theme shadow-lg rounded-lg capitalize font-bold h-full text-white"
+        on:click="{ ()=> { $modal = {} }}">
+        Order Again
+      </button>
+      <button class="mt-3 w-3/4 px-2 bg-theme shadow-lg rounded-lg capitalize font-bold h-full text-white"
+        on:click="{ ()=> window.open(`https://pay.getorders.app/#${invoice_id}`,'_blank') }">
+        View Invoice
+      </button>
+    </div>
+  </div>
+  <div class="flex-grow"></div>
+  <div class="flex-none p-3 text-gray-500 font-semibold flex">
+    <div class="flex-none w-1/2">
+
+    </div>
+    <div class="flex-none w-1/2 pl-3 text-right text-sm">
+      powered by <b class="text-theme">getorders.app</b>
+    </div>
+  </div>
+
+</div>

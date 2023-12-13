@@ -1,0 +1,61 @@
+{
+  "name": "svelte-v3",
+  "version": "0.0.1",
+  "description": "cybernetically enhanced web apps",
+  "main": "public/index.html",
+  "scripts": {
+    "dev": "npm-run-all --parallel start watch",
+    "start": "run-p build serve",
+    "serve": "w3 public",
+    "build": "rollup -c prod.rollup.config.js",
+    "watch": "rollup -c -w"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.4.5",
+    "@babel/plugin-syntax-dynamic-import": "^7.2.0",
+    "@babel/plugin-transform-runtime": "^7.4.4",
+    "@babel/preset-env": "^7.4.5",
+    "@babel/runtime": "^7.4.5",
+    "@rollup/plugin-babel": "^5.0.2",
+    "@rollup/plugin-json": "^4.1.0",
+    "npm-run-all": "^4.1.5",
+    "rollup": "^1.1.2",
+    "rollup-plugin-commonjs": "^9.2.0",
+    "rollup-plugin-livereload": "^2.0.0",
+    "rollup-plugin-node-resolve": "^4.0.0",
+    "rollup-plugin-svelte": "~6.1.1",
+    "svelte": "^3.0.0",
+    "svelvet": "^1.0.2"
+  },
+  "dependencies": {
+    "@babel/runtime": "^7.10.2",
+    "axios": "^0.19.2",
+    "buble": "^0.20.0",
+    "core-js": "^3.6.5",
+    "dayjs": "^1.8.17",
+    "es6-shim": "^0.35.5",
+    "gatsby": "^3.13.0",
+    "geolocator": "^2.1.5",
+    "jwt-decode": "^3.1.2",
+    "logrocket": "^1.0.11",
+    "regenerator-runtime": "^0.13.5",
+    "rollup-plugin-async": "^1.2.0",
+    "rollup-plugin-buble": "^0.19.8",
+    "rollup-plugin-terser": "^5.1.2",
+    "unfetch": "^4.1.0",
+    "w3": "^2.0.1",
+    "whatwg-fetch": "^3.0.0"
+  },
+  "engines": {
+    "node": "8.x"
+  },
+  "repository": {
+    "url": "https://glitch.com/edit/#!/svelte-v3"
+  },
+  "license": "MIT",
+  "keywords": [
+    "svelte",
+    "html",
+    "web"
+  ]
+}

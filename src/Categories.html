@@ -1,0 +1,30 @@
+<script>
+  import ModalView from './components/ModalView.html'
+  import { tag_list, tag_id, modal, close } from './Helper.js';
+</script>
+<style>
+  .main {
+    height: 60vh;
+  }
+</style>
+<ModalView>
+<div slot="title" class="text-center font-semibold text-lg text-gray-600 my-3">
+  Select a Category 
+  </div>
+  <div slot="content" class="p-0 my-0 main overflow-auto text-white font-semibold">
+    {#each $tag_list as tag, i}
+      <div class="float-left w-1/2 lg:w-1/4">
+   <div class="m-3 h-20 rounded-lg p-2 overflow-hidden shadow-lg bg-theme bounce" on:click="{() => { $modal = {}; $tag_id = tag.id } }">
+     <div class="text-lg text-center table w-full h-full">
+                  <div class="table-cell align-middle">{tag.name}</div>
+        </div>
+    </div>
+    </div>
+  {/each}
+  </div>
+    <div slot="toolbar" class="flex-none bg-white p-3">
+    <button class="w-full px-2 bg-gray-400 rounded-lg capitalize font-bold h-full text-gray-700 shadow-md" on:click="{close}">
+      Cancel
+    </button>
+  </div>
+</ModalView>

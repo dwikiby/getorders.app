@@ -1,0 +1,204 @@
+<script>
+  import ModalView from "./components/ModalView.html";
+  import Checkout from "./Checkout.html";
+  import Submission from "./Submission.html";
+  import PaymentMethod from "./PaymentMethod.html";
+  import VoucherView from "./VoucherView.html";
+  import dayjs from "dayjs/esm";
+  import relativeTime from "dayjs/esm/plugin/relativeTime";
+  import { fly, fade } from "svelte/transition";
+  import { quintInOut } from "svelte/easing";
+  import {
+    cart_list,
+    cart_total,
+    session,
+    modal,
+    voucher,
+    table_selected,
+    orders
+  } from "./Helper.js";
+  import Product from "./Product.html";
+  var grand_total = "0.00";
+  let deliveryArr = null;
+  var showVoucher = $session.showVoucher || $session.showVoucher == undefined;
+
+  if (typeof $session.delivery_method == "string") {
+    if ($session.delivery_method.includes("[")) {
+      deliveryArr = JSON.parse($session.delivery_method);
+    } else deliveryArr = [deliveryArr];
+  }
+  cart_list.subscribe((c) => {
+    if (deliveryArr && deliveryArr.length > 1) {
+      grand_total = (total(cart_total()) + 0).toFixed(2);
+    } else {
+      grand_total = (
+        total(cart_total()) +
+        ($session.delivery_fees ? parseFloat($session.delivery_fees) : 0)
+      ).toFixed(2);
+    }
+  });
+  function total(sum) {
+    if ($voucher._id) {
+      if ($voucher.discount) {
+        sum *= (100 - $voucher.discount) / 100;
+      }
+      if ($voucher.delivery) {
+        sum -= parseFloat($session.delivery_fees);
+      }
+      if ($voucher.deduct) {
+        sum -= $voucher.deduct;
+      }
+    }
+    return sum;
+  }
+  function checkout() {
+    if ($cart_list.length > 0) {
+      // $modal = { view: $session.table_name ? Submission : Checkout };
+      $modal = {
+        view: $table_selected
+          ? PaymentMethod
+          : $session.table_name
+          ? PaymentMethod
+          : Checkout,
+      };
+    }
+  }
+  function apply_voucher() {
+    $modal = { view: VoucherView };
+  }
+  function showMod(mod) {
+    var prefix = mod.mode == 1 ? "+ " : mod.mode == 2 ? "- " : "",
+      suffix = mod.mode == 3 ? "% " : "";
+    var amt = mod.amount > 0 ? ` ${prefix}${Number(mod.amount)}${suffix}` : "";
+    return `${mod.name}${amt}`;
+  }
+  dayjs.extend(relativeTime);
+</script>
+<ModalView>
+  <div slot="title" class="font-semibold text-xl text-gray-600 text-center">
+    Cart
+  </div>
+  <div slot="content">
+    {#if $cart_list.length == 0 && $orders.length == 0}
+    <div class="text-center pt-10">
+      <i class="fas fa-shopping-cart text-gray-400 text-5xl"></i>
+      <p class="text-gray-600 m-6">Your Cart Is Empty</p>
+      <button
+        class="mt-3 p-5 bg-theme text-white rounded-lg capitalize font-bold"
+        on:click="{ () => $modal = {} }"
+      >
+        Add Something
+      </button>
+    </div>
+    {:else if $cart_list.length > 0} {#each $cart_list as prod,i}
+    <div
+      class="flex { i<$cart_list.length-1 ? 'border-b' : ''} mx-2 p-2 border-gray-200 cursor-pointer bounce"
+      on:click="{ () => $modal = { view: Product, product : prod } }"
+    >
+      <div
+        class="flex-none w-10 h-10 text-center rounded-lg bg-gray-200 table text-sm text-gray-700"
+      >
+        <span class="table-cell align-middle">{prod.quantity}x</span>
+      </div>
+      <div class="flex-grow px-2">
+        <p class="font-semibold">{prod.name}</p>
+        {#if prod.remarks}
+        <p class="text-sm text-gray-700 italic">{prod.remarks}</p>
+        {/if} {#if prod.variant} {#each prod.variant as v}
+        <p class="text-sm text-gray-700">{v.name}</p>
+        {/each} {/if} {#each prod.modifiers as mod}
+        <p class="text-sm text-gray-700">{showMod(mod)}</p>
+        {/each} {#each prod.promo as promo}
+        <p class="text-sm text-theme">PROMO: {promo.name}</p>
+        {/each}
+      </div>
+      <div class="flex-none w-20 text-right text-sm text-theme">
+        {parseFloat(prod.unit_price).toFixed(2)}
+      </div>
+    </div>
+    {/each} {/if} {#if $orders.length > 0}
+    <p
+      class="text-center font-semibold text-lg text-gray-600 my-3 border-gray-200 border-dashed {$cart_list.length > 0 ? `pt-12 border-t-2` : ''}"
+    >
+      My Orders
+    </p>
+    {#each $orders as order}
+    <div
+      class="rounded-lg bg-teal-400 text-white text-sm font-semibold m-2 p-2"
+    >
+      {dayjs().to(dayjs(order.createdAt))}
+    </div>
+    {#each order.cart as prod, i}
+    <div
+      class="flex { i<order.cart.length-1 ? 'border-b' : ''} mx-2 p-2 border-gray-200"
+    >
+      <div
+        class="flex-none w-10 h-10 text-center rounded-lg bg-gray-200 table text-sm text-gray-700"
+      >
+        <span class="table-cell align-middle">{prod.quantity}x</span>
+      </div>
+      <div class="flex-grow px-2">
+        <p class="font-semibold">{prod.name}</p>
+        {#if prod.remarks}
+        <p class="text-sm text-gray-700 italic">{prod.remarks}</p>
+        {/if} {#each prod.variant as v}
+        <p class="text-sm text-gray-700">{v.name}</p>
+        {/each} {#each prod.modifiers as mod}
+        <p class="text-sm text-gray-700">{mod.name}</p>
+        {/each} {#each prod.promo as promo}
+        <p class="text-sm text-theme">PROMO: {promo.name}</p>
+        {/each}
+      </div>
+      <div class="flex-none w-20 text-right text-sm text-gray-700"></div>
+    </div>
+    {/each} {/each} {/if}
+  </div>
+  <div slot="toolbar" class="shadow-md">
+    <div class="p-2 text-right text-sm">
+      {#if deliveryArr && deliveryArr.length == 1} {#if $session.delivery_fees}
+      <p class="text-theme">
+        {#if $voucher._id && $voucher.delivery} Free Delivery. Up To
+        <b>RM{parseFloat($voucher.delivery).toFixed(2)}</b> {:else} Delivery
+        charges of
+        <b>RM{parseFloat($session.delivery_fees).toFixed(2)}</b> applies for
+        delivery. {/if}
+      </p>
+      {/if} {/if}
+      <p class="text-gray-700">
+        {$session.checkout_notes || `Total price shown does not include SST
+        charges*`}
+      </p>
+    </div>
+    {#if showVoucher}
+    <button
+      class="p-2 w-full text-theme text-center"
+      on:click="{apply_voucher}"
+    >
+      {#if $voucher._id}
+      <p class="text-right text-sm">
+        <i class="fas fa-tag pr-1"></i> {$voucher.code} {#if $voucher.discount}
+        ({$voucher.discount.toFixed(2)}% OFF) {:else if $voucher.deduct}
+        (RM{$voucher.deduct.toFixed(2)} OFF) {/if}
+      </p>
+      {:else}
+      <i class="fas fa-tag pr-1"></i>Got a voucher code? Tap <b>Here</b>
+      {/if}
+    </button>
+    {/if}
+    <div class="h-16 flex w-full p-2">
+      <button
+        class="w-1/4 bg-gray-300 rounded-lg mr-2 font-bold h-full"
+        on:click="{ () => $modal = {} }"
+      >
+        <i class="fas fa-chevron-down"></i>
+      </button>
+      <button
+        class="flex w-3/4 px-2 {$cart_list.length>0 ? 'bg-theme' : 'bg-gray-200'} rounded-lg font-bold h-full text-white shadow-md"
+        on:click="{checkout}"
+      >
+        <div class="flex-grow text-left">Checkout</div>
+        <div class="flex-grow text-right ml-2">RM{grand_total}</div>
+      </button>
+    </div>
+  </div>
+</ModalView>

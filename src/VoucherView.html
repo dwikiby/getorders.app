@@ -1,0 +1,56 @@
+<script>
+    import { onMount } from 'svelte';
+    import Cart from './Cart.html'
+    import ModalView from './components/ModalView.html'
+    import TextField from './components/UIText.html'
+    import dayjs from "dayjs/esm"
+    import { fly, fade } from 'svelte/transition';
+    import { quintInOut } from 'svelte/easing';
+    import { api, session, modal, loading, headers, voucher, cart_list, cart_total, fetch } from './Helper.js';
+    var code = "", code_field, error;
+    function validate(e) {
+        if (e.key === "Enter") {
+            check();
+        } else {
+            error = undefined;
+        }
+    }
+    function check() {
+        $loading = true;
+        error = undefined;
+        fetch(api(`/vouchers/${code}`)).then(function (v) {
+            $loading = false;
+            if (v._id) {
+                if (v.min && cart_total() < v.min) {
+                    error = `Minimum purchase of RM${v.min.toFixed(2)} required to use this voucher`;
+                } else {
+                    $voucher = v;
+                    $modal = { view: Cart };
+                }
+            } else {
+                error = v.error;
+            }
+        });
+    }
+</script>
+<ModalView>
+    <div slot="title" class="font-semibold text-xl text-gray-600 text-center">
+        Voucher Code
+    </div>
+    <div slot="content" class="px-2">
+        <p class="text-gray-600 text-center">
+            Enter a voucher code to apply
+        </p>
+        <TextField placeholder="Voucher Code" bind:this="{code_field}" bind:value="{code}" on:keyup="{validate}" />
+        {#if error}
+        <p class="text-theme">{error}</p>
+        {/if}
+    </div>
+    <div slot="toolbar" class="shadow-md p-2">
+        <button
+            class="px-2 w-full {code.length>0 ? 'bg-theme' : 'bg-gray-200'} rounded-lg font-bold h-full text-white shadow-md"
+            on:click="{check}">
+            Apply Voucher
+        </button>
+    </div>
+</ModalView>

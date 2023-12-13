@@ -1,0 +1,254 @@
+<script>
+  import ModalView from './components/ModalView.html'
+  import { modal, prod_list, cart_list, uuid, clone, session } from './Helper.js';
+  import { GoogleAnalytic } from "./misc/google-analytic.js";
+  var qty = 1, thisProduct = $modal.product, promos = [];
+  //pre_selected
+
+  if (!thisProduct.order_id) {
+    new GoogleAnalytic().pushProductView(thisProduct.name, {
+      'event_label': $session.name,
+    });
+
+    //Is new
+    if (!thisProduct.variant) {
+      if (thisProduct.variants.length > 0) {
+        var v = thisProduct.variants[0]
+        thisProduct.variant = [v]
+        thisProduct.unit_price = v.price
+      }
+    }
+    thisProduct.promo = []
+    thisProduct.modifiers = [];
+    thisProduct.modifier_sets.forEach(ms => {
+      thisProduct.modifiers = [...thisProduct.modifiers, ...ms.modifiers.filter(m => m.pre_selected == true)];
+    })
+    qty = 1;
+    // console.log(thisProduct, 'thisProduct');
+    // console.log(thisProduct.name);
+
+  } else {
+    qty = thisProduct.quantity;
+  }
+  $session.promotions.forEach(p => {
+    var eligible = thisProduct.tags.some(t => p.eligible_tags.includes(t.id.toString()));
+    if (p.eligible_products && eligible) {
+      eligible = p.eligible_products.includes(thisProduct.id.toString());
+    }
+    if (eligible) {
+      var r_prod = p.reward_products.map(p => prod_for(p)), products = [];
+      r_prod.forEach(p => {
+        if (p) {
+          p.variants.forEach(v => {
+            products = [...products, { id: p.id, name: p.name, variant: v.name, variant_id: v.id, uid: `${p.id}-${v.id}` }]
+          })
+        }
+      })
+      promos = [...promos, { ...p, reward_products: products }]
+    }
+  })
+  function prod_for(prod_id) {
+    return $prod_list.find(p => p.id.toString() == prod_id);
+  }
+
+  function var_exists(v) {
+    return thisProduct.variant.filter(m => m.id == v.id).length > 0;
+  }
+  function mod_exists(mod) {
+    return thisProduct.modifiers.filter(m => m.id == mod.id).length > 0;
+  }
+  function promo_exists(prod) {
+    return thisProduct.promo.find(p => p.uid == prod.uid);
+  }
+  function filter() {
+    $cart_list = $cart_list.filter(prod => prod.order_id != thisProduct.order_id);
+  }
+  function remove() {
+    filter();
+    close();
+  }
+  function edit() {
+    thisProduct.quantity = qty;
+    filter();
+    $cart_list = [thisProduct, ...$cart_list]
+    close();
+  }
+  function close() {
+    $modal = {}
+  }
+  function add() {
+    // console.log(`thisProduct`, thisProduct)
+    // console.log(`$session`, $session)
+    let adding = () => {
+      thisProduct.order_id = uuid();
+      thisProduct.quantity = qty;
+      $cart_list = [thisProduct, ...$cart_list];
+      fbq('track', 'AddToCart');
+      close();
+    }
+
+    if ($session.outlets.length > 0 && thisProduct.modifier_sets.length > 0) {
+      let k = thisProduct.modifier_sets.map((d, i) => {
+        let z = thisProduct.modifiers.filter((l) => d.modifiers.map(j => j.id).includes(l.id))
+        let ret = {
+          status: true,
+          message: ''
+        }
+        if (z.length > d.max_apply_limit) {
+          ret.status = false;
+          ret.message = `Please choose not more than ${d.max_apply_limit} for ${d.name}`
+          return ret
+        }
+        else if (z.length < d.min_apply_limit) {
+          ret.status = false;
+          ret.message = `Please choose not more than ${d.min_apply_limit} for ${d.name}`
+          return ret
+        }
+        else
+          return ret
+      })
+
+      let error = k.filter(d => !d.status)
+
+      if (error.length > 0) {
+        alert(error[0].message)
+      }
+      else adding()
+    } else adding()
+
+  }
+  function togglePromo(promo, prod) {
+    thisProduct.promo = [{ uid: prod.uid, name: `${prod.name} ${prod.variant}`, prod_id: prod.id, var_id: prod.variant_id, quantity: 1, promo_id: promo._id },
+    ...thisProduct.promo.slice(0, promo.reward_qty - 1)];
+    promos = promos;
+  }
+  function toggleVar(v, sender) {
+    if (sender) sender.focused = null;
+    thisProduct.variant = [v]
+    thisProduct.unit_price = v.price
+  }
+  function toggleMod(mod, sender) {
+    // console.log(`mod`, mod)
+    // console.log(`sender`, sender)
+    sender.focused = null;
+    var initialCount = thisProduct.modifiers.length;
+    thisProduct.modifiers = thisProduct.modifiers.filter(m => m.id != mod.id);
+    if (thisProduct.modifiers.length == initialCount) { //New entry
+      thisProduct.modifiers = [...thisProduct.modifiers, { id: mod.id, mode: mod.mode || 0, amount: parseFloat(mod.amount), name: mod.name, quantity: 1 }];
+    }
+  }
+  function showMod(mod) {
+    var amt = parseFloat(mod.amount)
+    var prefix = mod.mode == 1 ? '+ ' : mod.mode == 2 ? '- ' : '', suffix = mod.mode == 3 ? '% ' : '';
+    return amt > 0 ? `${prefix}${amt.toFixed(2)}${suffix}` : '';
+  }
+  function sortedItems(mod) {
+    console.log('item', mod);
+    return mod.sort((a, b) => a.name.localeCompare(b.name));
+  }
+</script>
+<ModalView>
+  <div slot="title" class="flex border-b-2 border-gray-200 mx-3 py-2">
+    <div class="flex-none w-2/3 text-lg font-semibold capitalize">{thisProduct.name}</div>
+
+    <div class="flex-none w-1/3 text-right text-gray-600">RM{thisProduct.unit_price}</div>
+  </div>
+  <div slot="content">
+    <div class="flex justify-center my-2 w-full">
+      <button class="flex-none rounded-full bg-gray-300 w-10 h-10" on:click="{ () => qty-= qty==1 ? 0 : 1 }">
+        <i class="fas fa-minus"></i>
+      </button>
+      <div class="flex-none qty align-middle h-10">
+        {qty}
+      </div>
+      <button class="flex-none rounded-full bg-gray-300 w-10 h-10" on:click="{ () => qty+=1 }">
+        <i class="fas fa-plus"></i>
+      </button>
+    </div>
+    <div class="bg-gray-100 px-0 py-4 h-64 overflow-auto">
+      {#if thisProduct.variants.length > 0}
+      <p class="font-semibold text-lg p-2 px-4">
+        Select One
+      </p>
+      {#each thisProduct.variants as variant}
+      <div class="flex bounce list-item mx-2 items-center h-12 cursor-pointer"
+        on:click="{ (e)=> toggleVar(variant,e.currentTarget)}">
+        <div class="flex-1">
+          <i
+            class="far fa-{var_exists(variant) ? 'check-circle' : 'circle'} text-lg px-4 text-gray-{var_exists(variant) ? '700' : '400'}"></i>
+          {variant.name}
+        </div>
+        <div class="flex-none bg-gray-400 rounded p-2 text-sm font-semibold text-white">
+          {parseFloat(variant.price).toFixed(2)}
+        </div>
+      </div>
+      {/each}
+      {/if}
+      {#each sortedItems(thisProduct.modifier_sets) as mod_set, i (mod_set.name)}
+      <p class="font-semibold text-lg p-2 px-4">
+        {mod_set.name}
+      </p>
+      {#each mod_set.modifiers as mod}
+      <div class="flex bounce list-item mx-2 items-center h-12 cursor-pointer"
+        on:click="{ (e)=> toggleMod(mod,e.currentTarget)}">
+        <div class="flex-1">
+          <i
+            class="far fa-{mod_exists(mod) ? 'check-circle' : 'circle'} text-lg px-4 text-gray-{mod_exists(mod) ? '700' : '400'}"></i>
+          {mod.name}
+        </div>
+        <div
+          class="flex-none bg-gray-400 rounded p-2 text-sm font-semibold text-white {mod.amount==0 ? ' invisible' : ''}">
+          {showMod(mod)}
+        </div>
+      </div>
+      {/each}
+      {/each}
+      {#each promos as promo}
+      <p class="font-semibold text-lg text-theme p-2 px-4">
+        {promo.name}
+      </p>
+      {#each promo.reward_products as prod}
+      <div class="flex h-12 bounce list-item mx-2 items-center cursor-pointer"
+        on:click="{ (e)=> togglePromo(promo,prod,e.currentTarget)}">
+        <div class="self-center">
+          <i
+            class="far fa-{promo_exists(prod) ? 'check-circle' : 'circle'} text-lg px-4 text-gray-{promo_exists(prod) ? '700' : '400'}"></i><b>{prod.name}</b>
+          <span class="ml-1 text-gray-700">{prod.variant}</span>
+        </div>
+      </div>
+      {/each}
+      {/each}
+      {#if thisProduct.description }
+
+      <div class="px-4">
+        <p class="font-semibold text-lg py-2">Description</p>
+        <p class="font text-lg py-2">{thisProduct.description}</p>
+      </div>
+      {/if}
+      <div class="px-4">
+        <p class="font-semibold text-lg py-2">Remarks</p>
+        <textarea placeholder="E.g : No Onions Please"
+          class="p-2 rounded-md border border-gray-200 bg-white w-full h-18 select-auto"
+          bind:value="{thisProduct.remarks}"></textarea>
+      </div>
+
+    </div>
+  </div>
+  <div slot="toolbar" class="h-20 flex w-full py-3 px-3">
+    {#if thisProduct.order_id!=undefined}
+    <button class="w-1/2 bg-gray-500 rounded-lg font-bold h-full text-white mr-2 shadow-md" on:click="{remove}">
+      <i class="fas fa-minus-circle pr-2"></i> Remove
+    </button>
+    <button class="w-1/2 bg-theme rounded-lg font-bold h-full text-white shadow-md" on:click="{edit}">
+      Done
+    </button>
+    {:else}
+    <button class="w-1/2 bg-gray-300 rounded-lg font-bold h-full mr-2 shadow-md" on:click="{close}">
+      Cancel
+    </button>
+    <button class="w-1/2 bg-theme rounded-lg font-bold h-full text-white shadow-md" on:click="{add}">
+      Order
+    </button>
+    {/if}
+  </div>
+</ModalView>

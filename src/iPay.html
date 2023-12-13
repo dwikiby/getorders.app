@@ -1,0 +1,38 @@
+<script>
+    import { onMount } from 'svelte';
+    export var data = {};
+    var paymentForm;
+    onMount(() => {
+        console.log(data)
+        paymentForm.submit()
+    })
+</script>
+<div class="bg-white flex flex-col absolute w-full h-full z-50">
+    <div class="flex-grow"></div>
+    <div class="flex-none text-center">
+        <p class="font-semibold text-2xl text-gray-500 my-3">
+            Redirecting to payment..
+        </p>
+        {#if data.token}
+<p>If this form does not automatically goes to the payment page, press the button below</p>
+<form bind:this="{paymentForm}" method="post" name="ePayment" action="https://payment.ipay88.com.my/ePayment/entry.asp">
+    <input type="hidden" name="MerchantCode" value="{data.token}" />
+    <input type="hidden" name="PaymentId" value="" />
+    <input type="hidden" name="RefNo" value="{data.invoice_id}" />
+    <input type="hidden" name="Amount" value="{data.amount}" />
+    <input type="hidden" name="Currency" value="MYR" />
+    <input type="hidden" name="ProdDesc" value="Payment" />
+    <input type="hidden" name="UserName" value="{data.guest.name}" />
+    <input type="hidden" name="UserContact" value="{data.guest.phone}" />
+    <input type="hidden" name="Signature" value="{data.sig}" />
+    <input type="hidden" name="ResponseURL" value="https://sse.getorders.app/redirect.html?i={data.invoice_id}" />
+    <input type="hidden" name="Remark" value="" />
+    <input type="hidden" name="Lang" value="UTF-8" />
+    <input type="hidden" name="SignatureType" value="SHA256" />
+    <input type="hidden" name="BackendURL" value="https://api.getorders.app/callback/ipay" />
+    <input type="submit" value="Proceed with Payment" name="Submit" />
+</form>
+{/if}
+</div>
+<div class="flex-grow"></div>
+</div>

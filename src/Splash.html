@@ -1,0 +1,505 @@
+<script>
+ import dayjs from "dayjs/esm";
+  import geolocator from "geolocator";
+  import { fly, fade } from "svelte/transition";
+  import { quintInOut } from "svelte/easing";
+  import TextField from "./components/UIText.html";
+  import { GoogleAnalytic } from "./misc/google-analytic.js";
+  import {
+    loading,
+    tag_id,
+    session,
+    api,
+    headers,
+    s3,
+    isAgent,
+    Agents,
+    fetch,
+    customer,
+    outlet_selected,
+    cart_list,
+    table_selected,
+  } from "./Helper.js";
+  customer.useLocalStorage();
+  var temp = {};
+  var outlet = "",
+    first_load = true,
+    outlet_coords,
+    user_coords,
+    load_products = false,
+    valid = true,
+    valid_message = "",
+    load_message = "";
+  var def_offline = false,
+    filter_outlet = [];
+
+  geolocator.config({
+    language: "en",
+    google: {
+      version: "3",
+      key: "AIzaSyAJIU96TdlM9BblWQhm-QWkwmgjIVUVkN4",
+    },
+  });
+  function tf_disp(t) {
+    var ta = t.split(":"),
+      am = "AM";
+    var hr = parseInt(ta);
+    if (hr > 12) {
+      hr -= 12;
+      am = "PM";
+    }
+    return `${hr}:${ta[1]}${am}`;
+  }
+
+  function tf_num(t) {
+    t = t.replace(":", "");
+    return parseInt(t);
+  }
+
+  function timeslot_check(timeslot) {
+    if (!timeslot || timeslot.length == 0) {
+      if ($session.timeslots && $session.timeslots.length > 1) {
+        timeslot = $session.timeslots;
+      } else {
+        timeslot = [];
+        //No timeslot
+        if ($session.offline == true && def_offline == false) {
+          //Outlet is not set to offline
+          $session.offline = false;
+          valid_message = "";
+        }
+      }
+    }
+    if (timeslot.length > 1) {
+      var from_time = timeslot[0],
+        to_time = timeslot[timeslot.length - 1];
+      var current_time = parseInt(dayjs().format("HHmm"));
+      if (
+        current_time >= tf_num(from_time) &&
+        current_time <= tf_num(to_time)
+      ) {
+        //Everything ok
+        if ($session.offline == true && def_offline == false) {
+          //Outlet is not set to offline
+          $session.offline = false;
+          valid_message = "";
+        }
+      } else {
+        $session.offline = true;
+        valid_message = `Store is now closed. Our operating time is from ${tf_disp(
+          from_time
+        )} to ${tf_disp(to_time)}`;
+      }
+    }
+  }
+  session.subscribe((s) => {
+    if (first_load == true && s.fire_id) {
+      first_load = false;
+      def_offline = $session.offline;
+      //FB Pixel
+      !(function (f, b, e, v, n, t, s) {
+        if (f.fbq) return;
+        n = f.fbq = function () {
+          n.callMethod
+            ? n.callMethod.apply(n, arguments)
+            : n.queue.push(arguments);
+        };
+        if (!f._fbq) f._fbq = n;
+        n.push = n;
+        n.loaded = !0;
+        n.version = "2.0";
+        n.queue = [];
+        t = b.createElement(e);
+        t.async = !0;
+        t.src = v;
+        s = b.getElementsByTagName(e)[0];
+        s.parentNode.insertBefore(t, s);
+      })(
+        window,
+        document,
+        "script",
+        "https://connect.facebook.net/en_US/fbevents.js"
+      );
+      if ($session.facebook_pixel_id) {
+        fbq("init", $session.facebook_pixel_id);
+      } else {
+        fbq("init", "829963997057124");
+      }
+      fbq("track", "PageView");
+
+      timeslot_check();
+      if ($session.outlets) {
+        if ($session.outlets.length == 1) {
+          outlet = $session.outlets[0].id;
+
+        } else if ($session.outlets.length > 1) {
+          var locations = $session.outlets.filter(
+            (o) =>
+              o.location &&
+              o.location.coordinates &&
+              o.location.coordinates.length > 1
+          );
+          if (locations.length > 0) {
+            //Get coordinates
+            load_message = `<i class="fas fa-compass fa-spin mr-1"></i> Checking Your Location...`;
+            geolocator.locate(options, function (err, location) {
+              if (!err) {
+                user_coords = location.coords;
+                locations = locations.map((o) => {
+                  if (o.location && o.location.coordinates) {
+                    var c = o.location.coordinates;
+                    o.distance = distance(location.coords, {
+                      latitude: c[1],
+                      longitude: c[0],
+                    });
+                  }
+                  return o;
+                });
+                $session.outlets = locations.sort((a, b) => {
+                  return a.distance - b.distance;
+                });
+                load_message = "";
+              }
+            });
+          }
+        }
+      }
+      if ($session.coordinates && $session.coordinates != "") {
+        var raw_coord = $session.coordinates.split(",");
+        outlet_coords = {
+          latitude: raw_coord[0],
+          longitude: raw_coord[1],
+        };
+        valid_message = `<i class="fas fa-compass fa-spin mr-1"></i> Checking Your Location...`;
+        geolocator.locate(options, function (err, location) {
+          valid = false;
+          if (!err) {
+            user_coords = location.coords;
+            //Get distance
+            var dist = distance(location.coords, outlet_coords);
+            if (dist >= 8) {
+              valid_message =
+                '<i class="fas fa-exclamation-circle mr-1"></i> Sorry, but we do not currently deliver to your location. If you think this is incorrect, press Message Us. Thanks!';
+            } else {
+              valid = true;
+              valid_message = "";
+            }
+          }
+        });
+      }
+      if ($outlet_selected !== "") {
+        filter_outlet = $session.outlets.filter(
+          (o) => o.id.toString() === $outlet_selected
+        );
+
+        if (filter_outlet.length > 0) {
+          outlet = $outlet_selected;
+
+          valid = true;
+          valid_message = "";
+        }
+      }
+      //console.log("Session : ", $session);
+
+    }
+  });
+  var options = {
+    enableHighAccuracy: true,
+    timeout: 5000,
+    maximumWait: 10000, // max wait time for desired accuracy
+    maximumAge: 0, // disable cache
+    desiredAccuracy: 200, // meters
+    fallbackToIP: true, // fallback to IP if Geolocation fails or rejected
+  };
+
+  function distance(latlng1, latlng2) {
+    const squared = (x) => x * x;
+    const toRad = (x) => (x * Math.PI) / 180;
+    const R = 6371;
+    const dLat = toRad(latlng2.latitude - latlng1.latitude);
+    const dLon = toRad(latlng2.longitude - latlng1.longitude);
+    const dLatSin = squared(Math.sin(dLat / 2));
+    const dLonSin = squared(Math.sin(dLon / 2));
+    const a =
+      dLatSin +
+      Math.cos(toRad(latlng1.latitude)) *
+      Math.cos(toRad(latlng2.latitude)) *
+      dLonSin;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c;
+    return distance;
+  }
+
+  function message(msg) {
+    var url = `https://api.whatsapp.com/send?phone=${$session.phone}&text=`;
+    var txt = encodeURIComponent(
+      "*Offline message from getorders.app*\n\n" + (msg || "")
+    );
+    document.location.href = url + txt;
+  }
+
+  function message_postcode() {
+    var txt = `Check my location ${user_coords.latitude}, ${user_coords.longitude} for ${$session.name}. Thanks!`;
+    message(txt);
+  }
+
+  function outlet_changed() {
+    if (outlet != "") {
+      // console.log("outlet changed : ", outlet);
+      var this_outlet = $session.outlets.find((o) => o.id == outlet);
+      //   console.log("This outlet : ", this_outlet);
+      if (this_outlet.address || this_outlet.address2 || this_outlet.postcode) {
+        geolocator.geocode(
+          `${this_outlet.address}, ${this_outlet.address2}`,
+          function (err, location) {
+            if (err) {
+              alert("This outlet is not available for now");
+            } else {
+              $session.address = this_outlet.address;
+              $session.address2 = this_outlet.address2;
+              $session.longitude = location.coords.longitude;
+              $session.latitude = location.coords.latitude;
+            }
+          }
+        );
+      }
+      timeslot_check(this_outlet.timeslots);
+    }
+  }
+
+  function process() {
+
+    if (temp.products && temp.inventory) {
+      var filtered = [];
+      temp.products.forEach((p) => {
+        var inventory = temp.inventory.filter(
+          (i) =>
+            i.product_id == p.id.toString() &&
+            parseInt(i.outlet_id) == parseInt($session.outlet_id)
+        );
+        if (inventory.length > 0) {
+          var filter = $session.table_name ? [2] : [0, 1,2];
+          inventory.forEach((i) => {
+            if (i.soldAt.filter((s) => filter.includes(s)).length == 0) {
+              //Not sold here
+              if (i.variant_id != "") {
+                //Filter variant only
+                p.variants = p.variants.filter(
+                  (v) => v.id.toString() != i.variant_id
+                );
+              } else {
+                p.tags = [];
+              }
+            }
+          });
+        }
+        p.tags = p.tags.filter((t) => !$session.tags.includes(t.id));
+        if (p.tags.length > 0) {
+          filtered = [...filtered, p];
+        }
+      });
+      $session.products = filtered;
+      $session.activate = true;
+    }
+  }
+
+  function get_products() {
+    let previousTable = window.localStorage.getItem('selected_table')
+    if($table_selected != previousTable ){
+      $cart_list = [];
+    }
+
+    let gtagData = {
+      event_category: "Shop Visit",
+    }
+    new GoogleAnalytic().pushShopVisit($session.name, gtagData);
+
+    $session.outlet_name = $session.name;
+    if (outlet != "") {
+      $session.outlet_id = outlet;
+      var this_outlet = $session.outlets.find((o) => o.id == outlet);
+      if (this_outlet.distance) {
+        if (this_outlet.distance >= 8) {
+          $session.delivery_disable =
+            "Delivery is disabled as your location is not within our delivery distance.";
+        }
+      }
+      if ($session.outlets.length > 1 && this_outlet.name != $session.name) {
+        $session.outlet_name = `${$session.name} ${this_outlet.name}`;
+        gtagData.event_label = this_outlet.name;
+        new GoogleAnalytic().pushShopVisit($session.name, gtagData);
+      }
+      if (this_outlet.phone) {
+        if (this_outlet.phone != "") $session.phone = this_outlet.phone;
+      }
+    }
+
+    if (!$session.list_style) {
+      $session.list_style = "grid";
+    }
+    load_products = true;
+    var promise;
+    if (!$session.tags) $session.tags = [];
+    if ($session.f_id && $session.outlet_id) {
+      promise = fetch(
+        `https://db.getorders.app/products.sl.${$session.f_id}.${$session.outlet_id}.json`
+      );
+    }
+    fetch(api("/guest/inventory")).then((r) => {
+      temp.inventory = r;
+      process();
+    });
+    check_products(promise);
+  }
+
+  function check_products(promise) {
+    if (!promise) {
+      promise = fetch(api("/guest/products"));
+    }
+    promise
+      .then((r) => {
+        if (Object.prototype.toString.call(r) == "[object Array]") {
+          temp.products = r;
+          process();
+        } else {
+          check_products();
+        }
+      })
+      .catch((e) => {
+        //  console.log(e);
+        check_products();
+      });
+  }
+  var style = {
+    button:
+      "mt-3 w-3/4 px-2 bg-theme rounded-lg capitalize font-bold h-full text-white shadow-md",
+  };
+  $: if ($isAgent == "await") {
+    options.addressLookup = true;
+    geolocator.locate(options, function (err, location) {
+      // console.log("location", location);
+      if (location) {
+        fetch(
+          api(
+            `/guest/ejen2u/agent/nearest?postcode=${location.address.postalCode}`
+          )
+        ).then((r) => {
+          $Agents = r;
+          $isAgent = "true";
+          if ($Agents.length == 0) {
+            // console.log("here", outlet);
+            $isAgent = "false";
+            valid = true;
+          }
+        });
+      } else $isAgent = "blocked";
+    });
+  }
+</script>
+<div style="
+    background: url(https://s3-ap-southeast-1.amazonaws.com/instant.getorders.app/bg.png);
+  " class="bg-repeat flex flex-col absolute w-full h-full z-50 max-h-screen overflow-y-auto"
+  transition:fly="{{ opacity : 0, y : 300, duration : 1000, easing : quintInOut }}">
+  <div style="
+      background: url(https://s3.ap-southeast-1.amazonaws.com/instant.getorders.app/bg.png);
+    " class="bg-repeat flex flex-col absolute w-full h-full z-50 max-h-screen overflow-y-auto"
+    transition:fly="{{ opacity : 0, y : 300, duration : 1000, easing : quintInOut }}">
+    <div class="flex-grow"></div>
+    <div class="flex-none text-center py-2">
+      {#if $session.name && load_products==false}
+      <div transition:fly="{{ y : 100}}">
+        {#if !$session.message && $session.logo}
+        <div class="flex justify-center">
+          <div
+            class="overflow-hidden flex-none rounded-lg bg-gray-100 mr-2 w-24 h-24 bg-cover bg-center self-center shadow-md"
+            style="background-image: url({s3}{$session.logo})"></div>
+        </div>
+        {/if}
+        <p class="font-semibold text-3xl text-gray-700 my-3">
+          {$session.message || $session.name}
+        </p>
+        {#if $session.announcement}
+        <div class="bg-gray-100 border border-gray-200 p-2 m-3 text-theme rounded-lg">
+          <i class="fas fa-bullhorn pr-2"></i> {$session.announcement}
+        </div>
+        <!-- Check whether outlet more than 1 -->
+        {/if} {#if !$session.message} {#if $session.outlets.length > 1 &&
+        (filter_outlet.length == 0) && load_message==''}
+        <p>Select a branch to order from</p>
+        <div>
+          <select class="text-xl my-2 w-48" bind:value="{outlet}" on:change="{outlet_changed}">
+            <option value="">Select One</option>
+            {#each $session.outlets as outlet,i}
+            <option value="{outlet.id}">
+              {outlet.name} {#if
+              outlet.distance}({outlet.distance.toFixed(1)}KM){/if}
+            </option>
+            {/each}
+          </select>
+        </div>
+        {:else}
+        <p class="text-theme font-semibold text-sm">{@html load_message}</p>
+        {/if} {#if $session.offline && !$session.table_name}
+        <p class="text-theme font-semibold text-sm">
+          {@html valid_message != "" ? valid_message : `Store is closed at the
+          moment.`}
+        </p>
+        <button class="{style.button}" on:click="{message}">Message Us</button>
+        {:else if outlet_coords && valid==false}
+        <p class="text-theme font-semibold text-sm">{@html valid_message}</p>
+        <button class="{style.button}" on:click="{message_postcode}">
+          Message Us
+        </button>
+        {:else if $isAgent == 'true'}
+        <div class="flex justify-center">
+          <div class="bg-white border shadow-xl rounded-lg w-5/6 md:w-1/2">
+            <ul class="divide-y divide-gray-300">
+              <li class="p-4 font-bold text-theme">Agents near you</li>
+              {#each $Agents as agent}
+              <li class="p-4 hover:bg-gray-50 cursor-pointer"
+                on:mousedown="{ () => { document.location.href = `https://getorders.app/#${agent.companyID}/${agent.agentID}` } }">
+                {agent.name}
+              </li>
+              {/each}
+            </ul>
+          </div>
+        </div>
+        {:else if (outlet!="" || $session.outlets.length==0) && valid==true &&
+        $isAgent == 'false'}
+        <button class="{style.button}" on:click="{get_products}">
+          Start Order
+        </button>
+
+        {:else if $isAgent == 'await'}
+        <div transition:fly="{{ x : -100}}">
+          <p class="font-semibold text-lg text-theme my-3">
+            Loading.. Give us a moment..
+          </p>
+        </div>
+        {:else if $isAgent == 'blocked'}
+        <div transition:fly="{{ y : -100}}">
+          <p class="font-semibold text-lg text-gray-600 my-3">
+            Please enable your location to find nearby agents and refresh
+          </p>
+        </div>
+        {/if} {/if}
+      </div>
+      {:else}
+      <div transition:fly="{{ y : -100}}">
+        <i class="fas fa-compass fa-spin text-theme"></i>
+        <p class="font-semibold text-lg text-theme my-3">
+          {load_products==true ? 'Getting Products..' : `Loading.. Give us a
+          moment..`}
+        </p>
+      </div>
+      {/if}
+    </div>
+    <div class="flex-grow"></div>
+    <div class="flex-none p-3 text-gray-500 font-semibold flex">
+      <div class="flex-none w-1/2"></div>
+      <div class="flex-none w-1/2 pl-3 text-right text-sm">
+        powered by <b class="text-theme">getorders.app</b>
+      </div>
+    </div>
+  </div>
+</div>

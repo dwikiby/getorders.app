@@ -1,0 +1,422 @@
+<script>
+  import ModalView from "./components/ModalView.html";
+  import {
+    fill_product,
+    cart_list,
+    api,
+    headers,
+    session,
+    modal,
+    customer,
+    guest_id,
+    loading,
+    uuid,
+    voucher,
+    fetch,
+    agentID,
+    pop_modal,
+    cart_total,
+  } from "./Helper.js";
+  import Thanks from "./ThankYou.html";
+  import iPay from "./iPay.html";
+  import Kiple from "./kiple.html";
+  import { onMount } from "svelte";
+  import geolocator from "geolocator";
+  export var data, cust, notes, grand_total, arg;
+  let cust_data = cust;
+  let delivery = true;
+  let deliveryArr = arg;
+  let selected = false,
+    selected_delivery,
+    deliveries = [
+      deliveryArr.includes("own_delivery")
+        ? {
+            provider: "own_delivery",
+            label: "Personal Delivery",
+            value: $session.own_delivery_fee,
+            error: false,
+          }
+        : null,
+      deliveryArr.includes("speedy")
+        ? {
+            provider: "speedy",
+            label: "Speedy",
+            value: null,
+            error: false,
+          }
+        : null,
+      deliveryArr.includes("bungkusit")
+        ? {
+            provider: "bungkusit",
+            label: "Bungkusit",
+            value: null,
+            error: false,
+          }
+        : null,
+      deliveryArr.includes("lalamove")
+        ? {
+            provider: "lalamove",
+            label: "Lalamove",
+            value: null,
+            error: false,
+          }
+        : null,
+    ];
+  let preferred = null;
+  if (
+    deliveries.findIndex((d) => {
+      if (d) {
+        return d.provider == "speedy";
+      }
+    })
+  ) {
+    $loading = true;
+    fetch(api("/guest/calculate"), { guest: cust }).then((r) => {
+      let a = deliveries.findIndex((d) => {
+        if (d) {
+          return d.provider == "speedy";
+        }
+      });
+      if (r.error) {
+        $loading = false;
+        deliveries[a] = {
+          provider: "speedy",
+          label: "MrSpeedy",
+          value: r.error,
+          error: true,
+        };
+      } else {
+        deliveries[a] = {
+          provider: "speedy",
+          label: "MrSpeedy",
+          value: r.delivery_fee,
+          error: false,
+        };
+        $loading = false;
+      }
+    });
+  }
+  if (
+    deliveries.findIndex((d) => {
+      if (d) {
+        return d.provider == "bungkusit";
+      }
+    })
+  ) {
+    $loading = true;
+    let pay = payloadCalcultor(cust, $session);
+    fetch(api("/guest/bungkusit/calculate"), { ...pay }).then((r) => {
+      let a = deliveries.findIndex((d) => {
+        if (d) {
+          return d.provider == "bungkusit";
+        }
+      });
+      if (r.error) {
+        $loading = false;
+        deliveries[a] = {
+          provider: "bungkusit",
+          label: "Bungkusit",
+          value: r.error,
+          error: true,
+        };
+      } else {
+        deliveries[a] = {
+          provider: "bungkusit",
+          label: "Bungkusit",
+          value: r.delivery_fee,
+          error: false,
+        };
+        $loading = false;
+      }
+    });
+  }
+  if (
+    deliveries.findIndex((d) => {
+      if (d) {
+        return d.provider == "speedy";
+      }
+    })
+  ) {
+    $loading = true;
+    let pay = payloadCalcultor(cust, $session);
+    fetch(api("/guest/lalamove/calculate"), { ...pay }).then((r) => {
+      let a = deliveries.findIndex((d) => {
+        if (d) {
+          return d.provider == "lalamove";
+        }
+      });
+      if (r.error) {
+        $loading = false;
+        deliveries[a] = {
+          provider: "lalamove",
+          label: "Lalamove",
+          value: r.error,
+          error: true,
+        };
+      } else {
+        deliveries[a] = {
+          provider: "lalamove",
+          label: "Lalamove",
+          value: r.delivery_fee,
+          error: false,
+        };
+        $loading = false;
+      }
+    });
+  }
+
+  function checkString(d) {
+    if (d && d !== "") {
+      return d;
+    } else {
+      return false;
+    }
+  }
+  function add(i) {
+    selected = deliveries[i].error ? false : true;
+    selected_delivery = deliveries[i];
+    // console.log("selected delivery", selected_delivery);
+    let cap = checkString($session.delivery_cap);
+    if (cap) {
+      preferred =
+        deliveries[i].value > parseFloat(cap)
+          ? deliveries[i].value
+          : parseFloat(cap);
+    } else {
+      preferred = deliveries[i].value;
+    }
+    total();
+  }
+  function checkVoucher(sum) {
+    if ($voucher._id) {
+      if ($voucher.discount) {
+        sum *= (100 - $voucher.discount) / 100;
+      }
+      if ($voucher.delivery) {
+        sum -= parseFloat($session.delivery_fees);
+      }
+      if ($voucher.deduct) {
+        sum -= $voucher.deduct;
+      }
+    }
+    return sum;
+  }
+  function close() {
+    pop_modal();
+  }
+  function total() {
+    if (!selected) {
+      return "";
+    } else {
+      grand_total = parseFloat(
+        checkVoucher(cart_total()) + preferred || 0
+      ).toFixed(2);
+    }
+  }
+  function checkout() {
+    if (selected === false) {
+      alert(" Please click on a delivery method ");
+    } else {
+      if (selected_delivery.error) {
+        alert(" The delivery service is currenly unavailable ");
+      } else {
+        let delivery = {
+          provider: selected_delivery.provider,
+          dropoff_long: cust.longitude,
+          dropoff_lat: cust.latitude,
+          pickup_long: $session.longitude,
+          pickup_lat: $session.latitude,
+          order_receipt_items: data.cart.map((d) => ({
+            name: d.name,
+            quantity: d.quantity,
+          })),
+        };
+        data = { ...data, delivery_detail: delivery };
+        save_order(data);
+      }
+    }
+  }
+  function payloadCalcultor(cust, sess) {
+    return {
+      pickup_address: sess.address + ", " + sess.address2,
+      dropoff_address: cust.address + ", " + cust.address2,
+      order_type: "DELIVER_NOW",
+      pickup_long: sess.longitude,
+      pickup_lat: sess.latitude,
+      dropoff_long: cust.longitude,
+      cust_name: cust.name,
+      cust_phone: cust.phone,
+      dropoff_lat: cust.latitude,
+      fire_id: sess.fire_id,
+    };
+  }
+
+  function save_order(data) {
+    $loading = true;
+    fbq("track", "Purchase");
+    // console.log("save order data = ", data);
+    fetch(api("/guest/delivery"), data).then((response) => {
+      if (!response.invoice_id) {
+        if (response.inventory_error) {
+          var payload =
+            "Sorry but the items below have ran out of stock : \n\n";
+          response.inventory_error.forEach((e) => {
+            payload += `${e.name} (Stock : ${e.total_left})\n`;
+          });
+          alert(payload);
+        } else {
+          alert(
+            "An error occured while submitting your order. Please try again."
+          );
+        }
+        $loading = false;
+      } else if (response.sig) {
+        $modal = {
+          view: response.gateway == "ipay" ? iPay : Kiple,
+          data: response,
+        };
+        $cart_list = [];
+        $loading = false;
+      } else if (response.checkoutURI) {
+        document.location.href = response.checkoutURI;
+        // window.open(generate(response.checkoutURI), '_blank')
+      } else {
+        document.location.href = generate(response.invoice_id);
+        $modal = { view: Thanks, invoice_id: response.invoice_id };
+        $cart_list = [];
+        // document.location.href = generate(response.invoice_id);
+        // window.open(generate(response.invoice_id), '_blank')
+        $loading = false;
+      }
+    });
+  }
+  function generate(invoice_id) {
+    var url = `https://api.whatsapp.com/send?phone=${$session.phone}&text=`,
+      cust = "";
+    if (delivery == true) {
+      cust = `*${cust_data.name}*\n${cust_data.address}\n${cust_data.address2}\n${cust_data.postcode}`;
+    } else {
+      cust = `*${cust_data.name}*`;
+    }
+    if (notes != "") cust += `\n\nNotes : ${notes}`;
+    var list = `*${
+      delivery == true ? "DELIVERY" : "PICKUP"
+    } from getorders.app*\n\n`;
+    var msg = "To check invoice, tap here";
+    list += `${$session.outlet_name}\n\n`;
+    list += `${msg} 👉🏻 https://pay.getorders.app/#${invoice_id}\n\n`;
+
+    $cart_list.forEach((p) => {
+      list += `*${p.name} x${p.quantity}*\n`;
+      if (p.variant) {
+        p.variant.forEach((v) => {
+          list += ` _- ${v.name}_\n`;
+        });
+      }
+      p.modifiers.forEach((m) => {
+        list += ` _- ${m.name}_\n`;
+      });
+      if (p.remarks) {
+        list += `_Remarks : ${p.remarks}_\n`;
+      }
+    });
+    var txt = encodeURIComponent(list + "\n" + cust);
+    return `${url}${txt}`;
+  }
+</script>
+<ModalView>
+  <div slot="title" class="flex border-b-2 border-gray-200 mx-3 py-2">
+    <div class="flex-none w-2/3 text-xl font-semibold capitalize">
+      Delivery fee information
+    </div>
+  </div>
+  <div slot="content">
+    {#if deliveries.length == 0}
+    <p>empty</p>
+    {:else}
+    <!-- else if content here -->
+    {#each deliveries as item, i} {#if item}
+    <button
+      class="
+        p-5
+        flex
+        justify-between
+        w-full
+        hover:bg-gray-150
+        focus:ring-2 focus:ring-yellow-500
+      "
+      on:click="{()=>add(i)}"
+    >
+      <div class="text-lg font-medium">{item.label}</div>
+      {#if !item.value}
+      <div class="text-lg text-theme">Loading</div>
+      {:else if item.error}
+      <div class="text-lg text-theme">{item.value}</div>
+      {:else}
+      <div class="text-lg text-theme">
+        + RM{parseFloat(item.value > $session.delivery_cap ? item.value :
+        $session.delivery_cap).toFixed(2)}
+      </div>
+      {/if}
+    </button>
+    {/if} {/each} {/if}
+    <!-- <button class="p-5 flex justify-between w-full hover:bg-gray-150 focus:ring-2 focus:ring-yellow-500"
+            on:click="{add}">
+            <div class="text-lg font-medium">Bungkusit</div>
+            <div class="text-lg text-theme">{"+ RM" + bungkusit}</div>
+        </button> -->
+    <div class="flex p-2">
+      <button
+        class="w-1/2 bg-gray-300 rounded-lg font-bold mr-2 shadow-md"
+        on:click="{close}"
+      >
+        Close
+      </button>
+      {#if !selected}
+      <button
+        class="
+          w-1/2
+          bg-theme
+          rounded-lg
+          font-bold
+          {!selected
+          ?
+          'opacity-25'
+          :
+          ''
+          }
+          text-white
+          shadow-md
+        "
+        on:click="{checkout}"
+      >
+        <span>Order</span>
+      </button>
+      {:else}
+      <button
+        class="
+          w-1/2
+          bg-theme
+          rounded-lg
+          font-bold
+          {!selected
+          ?
+          'opacity-25'
+          :
+          ''
+          }
+          text-white
+          shadow-md
+          flex
+          justify-between
+          p-2
+        "
+        on:click="{checkout}"
+      >
+        <span>Total</span>
+        <span>RM { grand_total }</span>
+      </button>
+      {/if}
+    </div>
+  </div>
+</ModalView>

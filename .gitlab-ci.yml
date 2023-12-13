@@ -1,0 +1,23 @@
+image: node:16
+
+cache:
+  paths:
+    - node_modules/
+    - .cache/
+    - public/
+
+pages:
+  variables:
+    CLOUDFLARE_API_TOKEN: $API_TOKEN
+    CLOUDFLARE_ACCOUNT_ID: $ACCOUNT_ID
+  stage: deploy
+  script:
+    - npm install
+    - ./node_modules/.bin/gatsby build
+    - npm install -g wrangler --unsafe-perm=true
+    - wrangler pages deploy ./public --project-name=go-app --branch=production
+  artifacts:
+    paths:
+      - public
+  only:
+    - master

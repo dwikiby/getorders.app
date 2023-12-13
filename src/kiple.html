@@ -1,0 +1,37 @@
+<script>
+    import dayjs from "dayjs/esm"
+    import { onMount } from 'svelte';
+    export var data = {};
+    var paymentForm;
+    onMount(() => {
+        console.log(data)
+        paymentForm.submit()
+    })
+</script>
+<div class="bg-white flex flex-col absolute w-full h-full z-50">
+    <div class="flex-grow"></div>
+    <div class="flex-none text-center">
+        <p class="font-semibold text-2xl text-gray-500 my-3">
+            Redirecting to payment..
+        </p>
+        {#if data.token}
+<p>If this form does not automatically goes to the payment page, press the button below</p>
+<form bind:this="{paymentForm}" action="https://kiplepay.com/wcgatewayinit.php" method="post">
+    <input type="hidden" name="ord_date" value="{dayjs().format('DD MMMM YYYY')}">
+    <input type="hidden" name="ord_totalamt" value="{data.amount}" />
+    <input type="hidden" name="ord_gstamt" value="0.00" />
+    <input type="hidden" name="ord_shipname" value="{data.guest.name}">
+    <input type="hidden" name="ord_shipcountry" value="Malaysia">
+    <input type="hidden" name="ord_mercref" value="{data.invoice_id}">
+    <input type="hidden" name="ord_telephone" value="{data.guest.phone}">
+    <input type="hidden" name="ord_delcharges" value="0.00">
+    <input type="hidden" name="ord_svccharges" value="0.00">
+    <input type="hidden" name="ord_mercID" value="{data.token}">
+    <input type="hidden" name="merchant_hashvalue" value="{data.sig}">
+    <input type="hidden" name="ord_returnURL" value="https://sse.getorders.app/redirect.html?i={data.invoice_id}">
+    <input type="submit" name="Submit" value="Proceed with Payment">
+</form>
+{/if}
+</div>
+<div class="flex-grow"></div>
+</div>

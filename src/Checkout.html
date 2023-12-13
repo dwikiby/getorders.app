@@ -1,0 +1,667 @@
+<script>
+  import ModalView from "./components/ModalView.html";
+  import TextField from "./components/UIText.html";
+  import Thanks from "./ThankYou.html";
+  import iPay from "./iPay.html";
+  import Kiple from "./kiple.html";
+  import geolocator from "geolocator";
+  import unfetch from "unfetch";
+  import deliverypage from "./Delivery.html";
+  import { onMount } from "svelte";
+  import {
+    fill_product,
+    cart_list,
+    cart_total,
+    api,
+    headers,
+    session,
+    modal,
+    customer,
+    guest_id,
+    loading,
+    uuid,
+    voucher,
+    fetch,
+    pop_modal,
+    agentID,
+    agent_id,
+    isInputError
+  } from "./Helper.js";
+
+  var cust_data = $customer,
+    delivery,
+    driveThru,
+    notes = "",
+    referral = "",
+    sent = false,
+    validation = [],
+    show_validation = false;
+  var over_delivery_fee;
+  var mailformat = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
+  if (!cust_data.phone) cust_data.phone = "";
+  if (!cust_data.email) cust_data.email = "";
+  if ($session.valid) {
+    cust_data = { ...cust_data, ...$session.valid };
+  }
+  let price_exceed = false;
+
+  function save_order(data) {
+    fbq("track", "Purchase");
+    let k = data || {};
+    var v = $voucher._id || undefined;
+    const regex = RegExp(/(\+?6?01)[0-46-9]-*[0-9]{7,8}$/);
+    var phoneRegex = regex.test($customer.phone);
+
+    if (phoneRegex == false) {
+      alert('Phone number must in correct format');
+      $loading = false;
+      return;
+    }
+
+    if (data == undefined) {
+      $customer = cust_data;
+      k = {
+        ...k,
+        customer: { ...cust_data, uuid: $guest_id },
+        cart: $cart_list,
+        notes,
+        referral,
+        delivery,
+        voucher: v,
+      };
+      if ($session.payments && $session.payments.length == 1) {
+        k.paydirect = $session.payments[0];
+      }
+      let payload = {
+        provider: $session.delivery_method,
+        dropoff_long: cust_data.longitude,
+        dropoff_lat: cust_data.latitude,
+        pickup_long: $session.longitude,
+        pickup_lat: $session.latitude,
+        order_receipt_items: k.cart.map((d) => ({
+          name: d.name,
+          quantity: d.quantity,
+        })),
+      };
+      k = { ...k, delivery_detail: payload };
+    }
+    if ($agentID && $agentID !== "") {
+      k.agent_id = $agent_id;
+      if ($session.enable_payment) {
+        k.paydirect = $session.payments[0];
+      } else k.paydirect = null;
+    }
+    // console.log("save order data = ", k);
+    fetch(api("/guest/delivery"), k).then((response) => {
+      if (!response.invoice_id) {
+        if (response.inventory_error) {
+          var payload =
+            "Sorry but the items below have ran out of stock : \n\n";
+          response.inventory_error.forEach((e) => {
+            payload += `${e.name} (Stock : ${e.total_left})\n`;
+          });
+          alert(payload);
+        } else {
+          alert(
+            "An error occured while submitting your order. Please try again."
+          );
+        }
+        $loading = false;
+      } else if (response.sig) {
+        $modal = {
+          view: response.gateway == "ipay" ? iPay : Kiple,
+          data: response,
+        };
+        $cart_list = [];
+        $loading = false;
+      } else if (response.checkoutURI) {
+        document.location.href = response.checkoutURI;
+        // window.open(generate(response.checkoutURI), '_blank')
+      } else {
+        document.location.href = generate(response.invoice_id);
+        const newdata = {
+          ...data,
+          invoice: response.invoice_id,
+        };
+        $modal = { view: Thanks, invoice_id: response.invoice_id };
+        $cart_list = [];
+        document.location.href = generate(response.invoice_id);
+        // window.open(generate(response.invoice_id), '_blank');
+        $loading = false;
+      }
+    });
+  }
+  function send_order() {
+    if (validation.length == 0) {
+      $loading = true;
+      var v = $voucher._id || undefined;
+      $customer = cust_data;
+      var data = {
+        customer: { ...cust_data, uuid: $guest_id },
+        cart: $cart_list,
+        notes,
+        referral,
+        delivery,
+        voucher: v,
+        agent_id: $agent_id,
+      };
+      if ($session.payments && $session.payments.length == 1) {
+        data.paydirect = $session.payments[0];
+      }
+      if (delivery) {
+        // data.deliver = $session.delivery;
+        let deliveryArr = Array.isArray($session.delivery_method)
+          ? $session.delivery_method
+          : $session.delivery_method.includes("[")
+          ? JSON.parse($session.delivery_method)
+          : [$session.delivery_method];
+        // if ($session.delivery_method.includes("[")) {
+        //   let deliveryArr = JSON.parse($session.delivery_method);
+        if (deliveryArr.length > 1) {
+          $loading = false;
+          geolocator.geocode(
+            `${cust_data.address}, ${cust_data.address2}`,
+            function (err, location) {
+              if (err) {
+                alert("Please recheck your address");
+              } else {
+                cust_data.longitude = location.coords.longitude;
+                cust_data.latitude = location.coords.latitude;
+                $modal = {
+                  view: deliverypage,
+                  data: data,
+                  cust: cust_data,
+                  notes: notes,
+                  arg: deliveryArr,
+                };
+              }
+            }
+          );
+        } else {
+          $session.delivery_method = deliveryArr[0];
+          deliver_order($session.delivery_method, data);
+        }
+        // } else deliver_order($session.delivery_method, data);
+      } else {
+        save_order(data);
+      }
+    } else {
+      show_validation = true;
+      if(cust_data.name == '') $isInputError.name = true
+      if(cust_data.phone == '') $isInputError.phone = true
+      if(cust_data.phone.length < 9) $isInputError.phone = true
+      if(cust_data.phone.match(/^[0-9]+$/) == null) $isInputError.phone = true
+      if(cust_data.email == '') $isInputError.email = true
+      if(cust_data.email.match(mailformat) == null) $isInputError.email = true
+      if(cust_data.address == '') $isInputError.address = true
+      if(cust_data.postcode == '') $isInputError.postcode = true
+    }
+  }
+
+  function deliver_order(type, data) {
+    switch (type) {
+      case "own_delivery":
+        // data.delivery_amount = over_delivery_fee;
+        let payload = {
+          provider: "own_delivery",
+          receiver_address: `${cust_data.address}, ${cust_data.address2}`,
+          pickup_long: $session.longitude,
+          pickup_lat: $session.latitude,
+          order_receipt_items: data.cart.map((d) => ({
+            name: d.name,
+            quantity: d.quantity,
+          })),
+        };
+        data = { ...data, delivery_detail: payload };
+        save_order(data);
+        break;
+      case "bungkusit":
+        geolocator.geocode(
+          `${cust_data.address}, ${cust_data.address2}`,
+          function (err, location) {
+            if (err) {
+              alert("Please recheck your address");
+              pop_modal();
+            } else {
+              cust_data.longitude = location.coords.longitude;
+              cust_data.latitude = location.coords.latitude;
+              data.customer.longitude = location.coords.longitude;
+              data.customer.latitude = location.coords.latitude;
+              let pay = payloadCalcultor(cust_data, $session);
+              fetch(api("/guest/bungkusit/calculate"), { ...pay }).then((r) => {
+                if (r.error) {
+                  alert(
+                    "Sorry, we are unable to deliver to your location at the moment."
+                  );
+                } else {
+                  if (r.exceeded) {
+                    $loading = false;
+                    price_exceed = true;
+                    over_delivery_fee = parseFloat(r.delivery_fee);
+                  } else {
+                    let payload = {
+                      provider: selected_delivery.provider,
+                      dropoff_long: cust_data.longitude,
+                      dropoff_lat: cust_data.latitude,
+                      pickup_long: $session.longitude,
+                      pickup_lat: $session.latitude,
+                      order_receipt_items: data.cart.map((d) => ({
+                        name: d.name,
+                        quantity: d.quantity,
+                      })),
+                    };
+                    data = { ...data, delivery_detail: payload };
+                    save_order(data);
+                  }
+                }
+              });
+            }
+          }
+        );
+        break;
+      case "lalamove":
+        geolocator.geocode(
+          `${cust_data.address}, ${cust_data.address2}`,
+          function (err, location) {
+            if (err) {
+              alert("Please recheck your address");
+              pop_modal();
+            } else {
+              cust_data.longitude = location.coords.longitude;
+              cust_data.latitude = location.coords.latitude;
+              data.customer.longitude = location.coords.longitude;
+              data.customer.latitude = location.coords.latitude;
+              let pay = payloadCalcultor(cust_data, $session);
+              fetch(api("/guest/lalamove/calculate"), { ...pay }).then((r) => {
+                if (r.error) {
+                  $loading = false;
+                  alert(
+                    "Sorry, we are unable to deliver to your location at the moment."
+                  );
+                } else {
+                  if (r.exceeded) {
+                    $loading = false;
+                    price_exceed = true;
+                    over_delivery_fee = parseFloat(r.delivery_fee);
+                  } else {
+                    let payload = {
+                      provider: selected_delivery.provider,
+                      dropoff_long: cust_data.longitude,
+                      dropoff_lat: cust_data.latitude,
+                      pickup_long: $session.longitude,
+                      pickup_lat: $session.latitude,
+                      order_receipt_items: data.cart.map((d) => ({
+                        name: d.name,
+                        quantity: d.quantity,
+                      })),
+                    };
+                    data = { ...data, delivery_detail: payload };
+                    save_order(data);
+                  }
+                }
+              });
+            }
+          }
+        );
+        break;
+      case "speedy":
+        if (!over_delivery_fee) {
+          fetch(api("/guest/calculate"), { guest: cust_data }).then((resp) => {
+            if (resp.error) {
+              alert(
+                "Sorry, we are unable to deliver to your location at the moment."
+              );
+            } else {
+              if (resp.exceeded) {
+                $loading = false;
+                over_delivery_fee = parseFloat(resp.delivery_fee);
+              } else {
+                payload = {
+                  provider: "speedy",
+                  dropoff_long: cust_data.longitude,
+                  dropoff_lat: cust_data.latitude,
+                  pickup_long: $session.longitude,
+                  pickup_lat: $session.latitude,
+                  order_receipt_items: data.cart.map((d) => ({
+                    name: d.name,
+                    quantity: d.quantity,
+                  })),
+                };
+                data = {
+                  ...data,
+                  delivery_detail: payload,
+                };
+                save_order(data);
+              }
+            }
+          });
+        }
+        break;
+      case "agent":
+        data.delivery_amount = over_delivery_fee;
+        save_order(data);
+        break;
+      default:
+        data.delivery_amount = over_delivery_fee;
+        save_order(data);
+    }
+  }
+  function payloadCalcultor(cust, sess) {
+    return {
+      cust_name: cust.name,
+      cust_phone: cust.phone,
+      pickup_address: sess.address + ", " + sess.address2,
+      dropoff_address: cust.address + ", " + cust.address2,
+      order_type: "DELIVER_NOW",
+      pickup_long: sess.longitude,
+      pickup_lat: sess.latitude,
+      dropoff_long: cust.longitude,
+      dropoff_lat: cust.latitude,
+      fire_id: sess.fire_id,
+    };
+  }
+  function generate(invoice_id) {
+    var url = "";
+    if ($session.agent) {
+      url = `https://api.whatsapp.com/send?phone=${$session.agent.phoneNo}&text=`;
+    } else {
+      url = `https://api.whatsapp.com/send?phone=${$session.phone}&text=`;
+    }
+    let cust = "";
+    if (delivery == true) {
+      cust = `*${cust_data.name}*\n${cust_data.address}\n${cust_data.address2}\n${cust_data.postcode}`;
+    } else {
+      cust = `*${cust_data.name}*`;
+    }
+    if (notes != "") cust += `\n\nNotes : ${notes}`;
+    var list = `*${
+      delivery == true ? "DELIVERY" : "PICKUP"
+    } from getorders.app*\n\n`;
+    var msg = "To check invoice, tap here";
+    list += `${$session.outlet_name}\n\n`;
+    list += `${msg} 👉🏻 https://pay.getorders.app/#${invoice_id}\n\n`;
+
+    $cart_list.forEach((p) => {
+      list += `*${p.name} x${p.quantity}*\n`;
+      if (p.variant) {
+        p.variant.forEach((v) => {
+          list += ` _- ${v.name}_\n`;
+        });
+      }
+      p.modifiers.forEach((m) => {
+        list += ` _- ${m.name}_\n`;
+      });
+      if (p.remarks) {
+        list += `_Remarks : ${p.remarks}_\n`;
+      }
+    });
+    var txt = encodeURIComponent(list + "\n" + cust);
+    return `${url}${txt}`;
+  }
+  $: {
+    show_validation = false;
+    validation = [];
+    if (cust_data.name == "") {
+      validation = [...validation, "Name is required."];
+    }
+    if (cust_data.phone == "") {
+      validation = [...validation, "Phone number is required."];
+    } else {
+      if (cust_data.phone.length < 9) {
+        validation = [...validation, "Please provide a valid phone number."];
+      }
+      if (cust_data.phone.match(/^[0-9]+$/) == null) {
+        validation = [...validation, "Please provide a valid phone number."];
+      }
+    }
+    if (cust_data.email == "") {
+      validation = [...validation, "Email is required."];
+    } else {
+      if(cust_data.email.match(mailformat) == null){
+         validation = [...validation, "Please provide a properly formatted email address"];
+      }
+    }
+      
+    
+    if (driveThru) {
+      if (cust_data.plate == "")
+        validation = [...validation, "Plate No required for drive thru!"];
+    }
+    if (delivery == true) {
+      if (cust_data.address == "")
+        validation = [...validation, "Address is required."];
+      if (cust_data.postcode == "")
+        validation = [...validation, "Postcode is required."];
+    }
+  }
+</script>
+<ModalView>
+  <div slot="title" class="px-4 pt-2 text-2xl">
+    {delivery==undefined ? 'Select One' : delivery==true ? 'Delivery Details' :
+    'Pickup Details'}
+  </div>
+  <div slot="content" class="p-2">
+    {#if delivery==undefined} {#if $session.order_methods=='' ||
+    $session.order_methods.includes('pickup') }
+    <button
+      class="
+        w-full
+        mt-3
+        px-2
+        bg-theme
+        rounded-md
+        shadow-md
+        capitalize
+        font-bold
+        h-full
+        text-white
+      "
+      on:click="{ () => { delivery = false; }}"
+    >
+      <i class="fas fa-shopping-bag pr-2"></i> Pickup Order
+    </button>
+    <!-- <button class="w-full mt-3 px-2 bg-theme rounded-md shadow-md capitalize font-bold h-full text-white"
+      on:click="{ () => { delivery = false; driveThru = true; }}">
+      <i class="fas fa-car-side pr-2"></i> Drive-thru
+    </button> -->
+    {/if} {#if $session.order_methods=='' ||
+    $session.order_methods.includes('delivery') }
+    <button
+      class="
+        w-full
+        mt-3
+        px-2
+        bg-theme
+        {$session.delivery_disable
+        ?
+        'opacity-25'
+        :
+        ''}
+        rounded-md
+        shadow-md
+        capitalize
+        font-bold
+        h-full
+        text-white
+      "
+      on:click="{ () => { if (!$session.delivery_disable) delivery = true; }}"
+    >
+    <i class="fas fa-truck pr-2"></i> Request Delivery
+    <!-- {#if !$agentID && $agentID == ""}
+    <i class="fas fa-truck pr-2"></i> Request Delivery 
+    {:else}
+    <i class="fas fa-truck pr-2"></i> COD 
+    {/if} -->
+    </button>
+    {/if} {#if $session.delivery_disable}
+    <p class="text-sm text-gray-600 text-center p-2">
+      {$session.delivery_disable}
+    </p>
+    {/if}
+
+    <button
+      class="
+        w-full
+        mt-3
+        px-2
+        bg-gray-400
+        rounded-md
+        shadow-md
+        capitalize
+        font-bold
+        h-full
+        text-black
+      "
+      on:click="{() => { $modal = {}}}"
+    >
+      Cancel
+    </button>
+    {:else}
+    <TextField name="Name" bind:value="{cust_data.name}"  />
+    {#if show_validation}
+    <div class="text-orange-400 text-xs">
+      {#each validation as valid}
+         {#if valid.toLowerCase().includes('name')}
+            {valid}
+         {/if}
+      {/each}
+    </div>
+    {/if}
+    <TextField name="Phone" bind:value="{cust_data.phone}" />
+    {#if show_validation}
+    <div class="text-orange-400 text-xs">
+      {#each validation as valid}
+         {#if valid.toLowerCase().includes('phone')}
+            {valid}
+         {/if}
+      {/each}
+    </div>
+    {/if}
+    <TextField name="Email" bind:value="{cust_data.email}" />
+    {#if show_validation}
+    <div class="text-orange-400 text-xs">
+      {#each validation as valid}
+         {#if valid.toLowerCase().includes('email')}
+            {valid}
+         {/if}
+      {/each}
+    </div>
+    {/if}
+    {#if delivery==true}
+    <TextField name="Address" bind:value="{cust_data.address}" />
+    {#if show_validation}
+    <div class="text-orange-400 text-xs">
+      {#each validation as valid}
+         {#if valid.toLowerCase().includes('address') && !valid.toLowerCase().includes('email') }
+            {valid}
+         {/if}
+      {/each}
+    </div>
+    {/if}
+    <TextField name="Address #2" bind:value="{cust_data.address2}" />
+    {/if}
+    <div class="flex">
+      {#if delivery==true}
+      <div class="w-1/2">
+        <TextField
+          name="Postcode"
+          bind:value="{cust_data.postcode}"
+          style="{{ input : ($session.valid && $session.valid.postcode) ? 'disabled' : '' }}"
+        />
+        {#if show_validation}
+        <div class="text-orange-400 text-xs">
+          {#each validation as valid}
+             {#if valid.toLowerCase().includes('postcode')}
+                {valid}
+             {/if}
+          {/each}
+        </div>
+        {/if}
+      </div>
+      {/if} {#if !$agentID && $agentID == ""}
+      <div class="w-1/2">
+        <TextField name="Referral Code" bind:value="{referral}" />
+      </div>
+      {/if}
+    </div>
+    {#if driveThru}
+    <TextField
+      name="Plate No"
+      bind:value="{cust_data.plate}"
+      placeholder="help shop recognize your vehicle"
+    />
+    {/if}
+    <TextField name="Notes" bind:value="{notes}" />
+
+    <!-- {#if show_validation}
+    <div class="text-orange-400">
+      <ul>
+        {#each validation as valid}
+        <li>{valid}</li>
+        {/each}
+      </ul>
+    </div>
+    {/if}  -->
+    {#if over_delivery_fee} {#if !$agentID && $agentID == ""}
+    <p class="text-red-600 font-semibold">
+      Delivery fees for your address has additional surcharges, your new
+      delivery fees are (RM{over_delivery_fee.toFixed(2)}). If you agree to the
+      surcharges, press 'Confirm' to Place Your Order.
+    </p>
+    {:else}
+    <p class="text-red-600 font-semibold">
+      COD fees for your address has additional surcharges, your new COD fees are
+      (RM{over_delivery_fee.toFixed(2)}). If you agree to the surcharges, press
+      'Confirm' to Place Your Order.
+    </p>
+    {/if} {/if} {#if over_delivery_fee}
+    <button
+      class="
+        w-full
+        my-3
+        px-2
+        bg-theme
+        {
+        validation.length>0
+        ?
+        'opacity-25'
+        :
+        ''}
+        rounded-md
+        shadow-md
+        capitalize
+        font-bold
+        h-full
+        text-white
+      "
+      on:click="{save_order()}"
+    >
+      Confirm
+    </button>
+    {:else}
+    <button
+      class="
+        w-full
+        my-3
+        px-2
+        bg-theme
+        {
+        validation.length>0
+        ?
+        'opacity-25'
+        :
+        ''}
+        rounded-md
+        shadow-md
+        capitalize
+        font-bold
+        h-full
+        text-white
+      "
+      on:click="{send_order}"
+    >
+      Confirm
+    </button>
+    {/if} {/if}
+  </div>
+</ModalView>

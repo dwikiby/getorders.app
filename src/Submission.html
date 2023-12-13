@@ -1,0 +1,164 @@
+<script>
+  import ModalView from './components/ModalView.html'
+  import dayjs from "dayjs/esm";
+  import TextField from './components/UIText.html'
+  import { fill_product, cart_list, api, headers, session, modal, customer, guest_id, fetch } from './Helper.js';
+  customer.useLocalStorage()
+  var cust_data = $customer, validation = [], show_validation = false, pax = "", temperature = "<37.2";
+  if (!cust_data.phone) cust_data.phone = ""
+  var step = 0, tries = 0, sent_status = 0;
+  var step_title = ["Confirm Your Order Cart", "Covid Contact Tracing", "Sending Your Orders..", "Orders Sent"]
+  function verification() {
+    step = 2;
+  }
+  function send_order() {
+    /*
+    if (validation.length == 0) {*/
+      if (!cust_data.name || cust_data.name=="") cust_data.name = "Guest";
+      $customer = cust_data;
+      step = 2;
+      if(pax=="") pax = "1";
+      
+      fetch(api('/guest/checkout'), { customer: { ...cust_data, uuid: $guest_id }, cart: $cart_list, pax }).then(function (r) {
+        sent_status = 1;
+        sent_status = 2;
+        step = 3; 
+        const expiryTime = dayjs().add(3,'hours').format('YYYY-MM-DD HH:mm:ss');
+        r.expiryTime=expiryTime;
+        $orders = [fill_product(r), ...$orders]
+        //setTimeout(() => { order_status(r._id) }, 1000)
+      });
+      /*
+    } else {
+      show_validation = true;
+    }*/
+  }
+  function order_status(order_id) {
+    if (tries > 3) {
+      step = 2;
+    } else {
+      tries++
+      fetch(api('/guest/order'), { order_id: order_id }).then(function (r) {
+        switch (r.status) {
+          case 1:
+            setTimeout(() => { order_status(order_id) }, 2500)
+            break;
+          case 2:
+            sent_status = 2;
+            step = 3;
+            break;
+        }
+      }).catch(e => {
+        setTimeout(() => { order_status(order_id) }, 2500)
+      });
+    }
+  }
+  function reset() {
+    $cart_list = [];
+    $modal = {};
+
+  }
+  $: 
+    if (step > 1) {
+      setTimeout(function () {
+        reset();
+      }, 1000);
+    } 
+    {
+      show_validation = false;
+      validation = []
+      if (cust_data.phone == "") {
+        validation = [...validation, "Phone number is required."];
+      } else {
+        if (cust_data.phone.length < 9) {
+          validation = [...validation, "Please provide a valid phone number."]
+        }
+      }
+    }
+</script>
+<ModalView>
+  <div slot="title" class="px-4 pt-2 text-2xl">
+    {step_title[step]}
+  </div>
+  <div slot="content">
+    {#if step == 0}
+  <div class="h-32 p-4 relative">
+    <i class="absolute fas fa-shopping-cart z-0 text-gray-300 text-6xl right-0 bottom-0 pr-5"></i>
+    Press <b>'Confirm'</b> to Send Your Orders to the Restaurant.
+  </div>
+
+  <div class="h-24 flex bg-white py-5 px-3">
+    <button class="w-1/2 bg-gray-300 rounded-lg capitalize font-bold h-full mr-2" on:click="{ () => $modal = {} }">
+      Cancel
+    </button>
+    <button class="w-1/2 px-2 bg-theme shadow-lg rounded-lg capitalize font-bold h-full text-white" on:click="{send_order}">
+      Confirm
+    </button>
+  </div>  
+  {:else if step==1}
+  <div class="h-32 p-4 relative">
+    Due to government regulations for Covid-19 Contact Tracing, we require customers to enter their personal details to
+    place an order. We apologize for the inconvenience.
+  </div>
+  <div class="p-2">
+    <TextField name="Name" bind:value="{cust_data.name}" />
+    <TextField name="Phone" bind:value="{cust_data.phone}" />
+    <TextField name="Total Pax" placeholder="e.g : 2" bind:value="{pax}" />
+    <TextField name="Temperature" placeholder="37.2" bind:value="{temperature}" />
+        {#if show_validation}
+        <div class="text-orange-400">
+          <ul>
+            {#each validation as valid}
+            <li>{valid}</li>
+            {/each}
+          </ul>
+        </div>
+        {/if}
+        <button class="w-full my-3 px-2 bg-theme { validation.length>0 ? 'opacity-25' : ''} rounded-md shadow-md capitalize font-bold h-full text-white" on:click="{send_order}">
+          Confirm
+        </button>
+  </div>
+  {:else if step==2}
+  <div class="h-32 p-4 relative w-full flex items-center">
+    <div class="flex-none w-2/5 text-center">
+      <div class="w-10 h-10 rounded-full { sent_status==1 ? 'bg-green-400' : 'bg-gray-200'} mx-auto table mb-2">
+        {#if sent_status==1}
+        <i class="fas fa-check table-cell align-middle"></i>
+        {:else}
+        <i class="fas fa-spinner fa-spin table-cell align-middle"></i>
+        {/if}
+      </div>
+      <p class="text-sm font-semibold text-gray-600">
+        Orders<br> Placed
+      </p>
+    </div>
+    <div class="flex-none w-1/5 h-1 bg-gray-300 -mt-10">
+    </div>
+    <div class="flex-none w-2/5 text-center">
+      <div class="w-10 h-10 rounded-full { sent_status==2 ? 'bg-green-400' : 'bg-gray-200'} mx-auto table mb-2">
+        {#if sent_status==1}
+        <i class="fas fa-spinner fa-spin table-cell align-middle"></i>
+        {:else if sent_status==2}
+        <i class="fas fa-check table-cell align-middle"></i>
+        {:else}
+        <i class="fas fa-ellipsis-h table-cell align-middle"></i>
+        {/if}
+      </div>
+      <p class="text-sm font-semibold text-gray-600">
+        Orders<br> Received
+      </p>
+    </div>
+  </div>
+  {:else}
+  <div class="h-32 p-4 relative">
+    <i class="absolute fas fa-smile z-0 text-gray-300 text-6xl right-0 bottom-0 pr-5"></i>
+    Done. Your Orders Will Arrive Shortly.
+  </div>
+  <div class="h-24 flex w-full bg-white py-5 px-3">
+    <button class="w-full px-2 bg-theme shadow-lg rounded-lg capitalize font-bold h-full text-white" on:click="{reset}">
+      Complete
+    </button>
+  </div> 
+  {/if}
+  </div>
+</ModalView>

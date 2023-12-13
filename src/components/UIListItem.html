@@ -1,0 +1,119 @@
+<script>
+  export var type = "grid", product = {}
+  var s3 = "https://s3.ap-southeast-1.amazonaws.com/assets.getorders/";
+  if (!product.variant) {
+    if (product.variants.length > 0) {
+      var v = product.variants[0]
+      product.variant = [v]
+      product.unit_price = v.price
+    }
+  }
+  import { createEventDispatcher } from 'svelte';
+  const dispatch = createEventDispatcher();
+  function prod_image(prod) {
+    var img;
+    if (prod.media_urls.length > 0) {
+      img = prod.media_urls[0].s512 || prod.media_urls[0].original;
+      if (!img.startsWith('http')) {
+        img = s3 + img;
+      }
+    }
+    return img ? `background-image:url(${img})` : ''
+  }
+  function unit_price(prod) {
+    var price = `${parseFloat(prod.unit_price).toFixed(2)}`.split(".");
+    return `<b class='text-base'>${price[0]}</b>.${price[1]}`;
+  }
+  function prod_name(prod) {
+    var title = prod.name;
+    if (prod.code) {
+      title = `<b class='mr-1 text-gray-700'>${prod.code}</b>${title}`;
+    }
+    return title;
+  }
+</script>
+<div class="w-full" on:mousedown="{() => dispatch('click', product)}" style="{ product.total_left == 0 || product.out_of_stock == true ? 'pointer-events:none;' : ''}">
+
+  {#if type=='list'}
+  <div class="w-full cursor-pointer px-3">
+    <div
+      class="flex border-b border-gray-200 { product.media_urls.length>0 || product.description!=null ? '' : 'h-16'}"
+      style="{ product.total_left == 0 ? 'background-color: #D3D3D3;' : ''}"
+    >
+      {#if product.media_urls.length>0}
+      <div class="overflow-hidden shadow-md flex-none rounded-lg bg-gray-100 mr-2 w-24 h-24 bg-cover bg-center my-2"
+        style="{prod_image(product)}"></div>
+      <div class="flex-grow text-gray-800 mt-2">
+        {@html prod_name(product)}    
+        {#if product.description!=null}
+        <p class="text-gray-700 text-sm">
+          {product.description}
+        
+        </p>
+        {/if}        
+        <p class="font-semibold text-theme text-sm">
+          {#if product.before_discount}
+          <span class="line-through text-gray-600 pad" style="margin-top: 1.5px;">
+            RM{product.before_discount}
+          </span>
+          {/if}
+          {#if product.total_left == 0 || product.out_of_stock == true}
+          Out of Stock
+          {:else}
+          RM{@html unit_price(product)}
+          {/if}
+        </p>
+      </div>
+
+      {:else}
+      <p class="flex-grow self-center text-gray-800">
+        {@html prod_name(product)}
+        {#if product.description!=null}
+      <p class="text-gray-700 text-sm">
+        {product.description}
+      </p>
+      {/if}
+      </p>
+      <p class="w-20 self-center font-semibold text-right ml-3" style="{product.total_left == 0 || product.out_of_stock == true ? 'color: red;': ''}">
+          <!-- {parseFloat(product.unit_price).toFixed(2)} -->
+          {#if product.total_left == 0 || product.out_of_stock == true}
+          Out of Stock
+          {:else}
+          RM{@html unit_price(product)}
+          {/if}
+      </p>
+      {/if}
+    </div>
+  </div>
+  {:else}
+  <div class="float-left w-1/2 lg:w-1/4">
+    <div class="m-2 rounded-lg shadow bounce" style="{ product.total_left == 0 || product.out_of_stock == true ? 'background-color: #D3D3D3;' : ''}">
+      <div class="overflow-hidden rounded-t-lg bg-gray-100 w-full h-32 bg-cover bg-center"
+        style="{prod_image(product)}">
+        {#if product.media_urls.length==0}
+        <div class="text-2xl text-center table w-full h-full">
+          <div class="table-cell align-middle text-gray-300">{@html prod_name(product)}</div>
+        </div>
+        {/if}
+      </div>
+      <div class="px-2 pt-1 h-12 overflow-hidden text-sm capitalize">{@html prod_name(product)}</div>
+      <div class="text-theme px-2 py-1 text-sm flex">
+        {#if product.before_discount}
+        <span class="line-through text-gray-600 pad" style="margin-top: 1.5px;">
+          RM{product.before_discount}
+        </span>
+        {/if}
+        <span class="ml-1 align-top">
+          {#if product.total_left == 0 || product.out_of_stock == true}
+          <b>Out of Stock</b>
+          {/if}
+        </span>
+        <span class="{product.out_of_stock == true ? 'invisible' : ''}">
+          <b> RM{@html unit_price(product)}</b> 
+        </span>
+      </div>
+    </div>
+  </div>
+  {/if}
+
+</div>

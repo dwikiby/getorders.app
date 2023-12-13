@@ -1,0 +1,416 @@
+<script>
+  import { slide } from "svelte/transition";
+  import { quintInOut } from "svelte/easing";
+  import { onMount, tick } from "svelte";
+  import dayjs from "dayjs/esm";
+  import { spring } from "svelte/motion";
+  // import jwt from "jsonwebtoken";
+  import jwt_decode from "jwt-decode";
+  import {
+    cart_total,
+    clone,
+    voucher,
+    fill_product,
+    guest_id,
+    prod_list,
+    tag_list,
+    isAgent,
+    cart_list,
+    session,
+    qs,
+    customer,
+    api,
+    loading,
+    headers,
+    uuid,
+    modal,
+    fetch,
+    outlet_selected,
+    table_selected,
+    agentID,
+    agent_id,
+    orders,
+  } from "./Helper.js";
+  guest_id.useLocalStorage();
+  import geolocator from "geolocator";
+  import Product from "./Product.html";
+  import ListItem from "./components/UIListItem.html";
+  import Products from "./Products.html";
+  import Cart from "./Cart.html";
+  import History from "./History.html";
+  import Splash from "./Splash.html";
+  import LogRocket from "logrocket";
+  LogRocket.init("7obdmf/getorders");
+  document.addEventListener("touchstart", function () {}, true);
+  var grand_total = "0.00",
+    searchMode = false,
+    searchText,
+    filtered_prods;
+  var styles = {
+    navbar:
+      "flex-none flex w-full h-12 bg-gray-100 shadow-md font-semibold text-gray-800 text-center z-10",
+  };
+  onMount(() => {
+    console.log('session',$session);
+    var split_url = window.location.hash.replace("#", "").split("/");
+    let previousTable = window.localStorage.getItem('selected_table')
+    let current_table_id = split_url[2];
+    let is_shoplink_or_qr_link = !current_table_id && split_url.length==1
+    // if the table id changed so we need to clear the cart list and order from localstorage
+    if(current_table_id && current_table_id != previousTable ){
+      // in case the current table and previous table is not same, we will take current table as selected table
+      // so we can this to the next comparison.
+      window.localStorage.setItem('selected_table',current_table_id)
+      // $session={orders: [] };
+      $orders = [];
+      $cart_list = [];
+    }
+    if(is_shoplink_or_qr_link){
+      const is_shoplink = !!split_url[0];
+      if(split_url[0] != previousTable){
+      window.localStorage.setItem('selected_table',split_url[0])
+        $orders = [];
+        $cart_list = [];
+      }
+      // this is for session table so we will  filter expiry time of orders that we save on the local storage
+      if(!is_shoplink && split_url[0]==previousTable){
+      const raw_orders = window.localStorage.getItem('orders');
+      const history_orders = JSON.parse(raw_orders);
+      const now = dayjs();
+      const orders_before_expired = history_orders.filter(item=>dayjs(item.expiryTime).isAfter(now))
+      $orders=orders_before_expired;
+      }
+      else{
+        // otherwise this is for shoplink, so we need to clear orders storage if any.
+        $orders = [];
+        $cart_list = [];
+      }
+    }
+      // this is for static table so we will  filter expiry time of orders that we save on the local storage
+    if(current_table_id && current_table_id == previousTable){
+      const raw_orders = window.localStorage.getItem('orders');
+      const history_orders = JSON.parse(raw_orders);
+      const now = dayjs();
+      const orders_before_expired = history_orders.filter(item=>dayjs(item.expiryTime).isAfter(now))
+      $orders=orders_before_expired;
+    }
+    if ($guest_id == "") $guest_id = uuid();
+    LogRocket.identify($guest_id);
+    var qr = qs("s");
+    if (qr) {
+      // QR Session
+      $session.token = qr;
+      $session.type = "session";
+      getFranchise();
+    } else {
+      $session.token = qs("m"); // BANGIMART
+      // console.log("Session token : ", $session.token);
+      //handle no url
+      if (!$session.token || $session.token == "") {
+        var hash_url = window.location.hash.replace("#", "");
+        var split_url = window.location.hash.replace("#", "").split("/");
+        var split_and = window.location.hash.replace("#", "").split("&");
+        var split_param = window.location.hash.replace("#", "").split("?k=");
+        var url;
+        
+        if (hash_url == "") {
+          //no merchant
+          location.href = "https://www.getorders.app";
+        }//handle agent url
+        else if (split_url.length == 2) {
+          //store agent by id in session
+          const fd = new FormData();
+          fd.agentID = split_url[1];
+          $agentID = split_url[1];
+          fetch(api("/guest/ejen2u/agent"), fd).then((r) => {
+            console.log("agent", r);
+            if (r.message) {
+              alert("No agent shop found");
+            } else if (r.agent.credit <= 0) {
+              $session.offline = true;
+              alert("This agent shop is temporarily closed");
+            } else {
+              $session.token = r.identifier;
+              $agent_id = r.agent.agentID;
+              getFranchise(r.agent);
+            }
+          });
+        }// handle merchant identifier
+        else if (split_url.length == 3) {
+          url = split_url[0];
+          console.log('url',url);
+          $outlet_selected = split_url[1];
+          $table_selected = split_url[2];
+          $session.table_selected = $table_selected;
+          $session.token = url;
+        }
+        else if (split_and.length > 1) {
+          //handle qr url
+          url = split_and[0];
+          $outlet_selected = getUrlVars().outlet;
+          $session.token = url;
+        } else if (split_param.length > 1) {
+          //handle kitajaga
+          url = split_param[0];
+          // $outlet_selected = getUrlVars().outlet;
+          $session.token = url;
+          let userz = jwt_decode(split_param[1]);
+          userz.coords = [];
+          $customer = userz;
+        } else {
+          //normal merchant
+          url = hash_url;
+          $session.token = url;
+        }
+      }
+      getFranchise();
+    }
+  });
+
+  function getFranchise(type, method) {
+    var split_url = window.location.hash.replace("#", "").split("/");
+    console.log('begore getfranchise $session', $session)
+    fetch(api("/guest/franchise")).then((r) => {
+      console.log('r', r)
+      $session = { ...r, orders: []};
+      console.log('fetch getfranchise $session', $session)
+      if (type) {
+        $session.order_methods = $session.order_methods;
+        $session.delivery_method = type.delivery_method || $session.delivery_method;
+        $session.enable_payment = type.payment_gateway_stat;
+      }
+
+      if ($session.table_selected) {
+        $session.table_selected = r.table_selected
+      }
+      $isAgent = "false";
+      // console.log("fam", r);
+      if (split_url.length == 1) {
+        if (r.ejen2u_merchant_id && r.ejen2u_merchant_id !== "") {
+          // fetch(api("/guest/ejen2u/agent/nearest?postcode=43000")).then((r) => {
+          //   $Agents = r;
+          // });
+          $isAgent = "await";
+          // console.log("isAgent");
+        }
+      }
+      console.log('after getfranchise $session', $session)
+    });
+  }
+  function doSearch() {
+    filtered_prods = $prod_list.filter((prod) => {
+      var query = searchText.value.toLowerCase();
+      if (prod.code != null) {
+        if (prod.code.toLowerCase().includes(query)) return true;
+      }
+      if (prod.name.toLowerCase().includes(query)) return true;
+      return false;
+    });
+  }
+  function toggle_view() {
+    $session.list_style = $session.list_style == "grid" ? "list" : "grid";
+  }
+  function total(sum) {
+    if ($voucher._id) {
+      if ($voucher.discount) {
+        sum *= (100 - $voucher.discount) / 100;
+      }
+      if ($voucher.delivery) {
+        sum -= parseFloat($session.delivery_fees);
+      }
+    }
+    return sum;
+  }
+  function calc(sum, item) {
+    var mods = item.modifiers.reduce((sum, mod) => {
+      var amt = parseFloat(mod.amount);
+      var actual = mod.mode == 1 ? amt : mod.mode == 2 ? -amt : 0;
+      return parseFloat(sum) + actual;
+    }, 0);
+    return (
+      parseFloat(sum) +
+      (parseFloat(item.unit_price) + parseFloat(mods)) * item.quantity
+    );
+  }
+
+  cart_list.subscribe((c) => {
+    if ($session.delivery_method == "uc")
+      grand_total = (total(cart_total()) + 0).toFixed(2);
+    else
+      grand_total = (
+        total(cart_total()) +
+        ($session.delivery_fees ? parseFloat($session.delivery_fees) : 0)
+      ).toFixed(2);
+  });
+  function getUrlVars() {
+    var vars = {};
+    var parts = window.location.href.replace(
+      /[?&]+([^=&]+)=([^&]*)/gi,
+      function (m, key, value) {
+        vars[key] = value;
+      }
+    );
+    return vars;
+  }
+</script>
+{#if !$session.activate}
+<Splash />
+{/if}
+<div class="flex flex-col absolute w-full h-full bg-gray-200">
+  {#if searchMode==true}
+  <div transition:slide="{{ easing : quintInOut }}" class="{styles.navbar}">
+    <div
+      class="
+        flex-grow flex
+        self-center
+        h-8
+        rounded-lg
+        border border-gray-500
+        text-sm
+        mx-2
+        bg-white
+      "
+    >
+      <i class="fas fa-search mx-2 self-center"></i>
+      <input
+        type="text"
+        class="flex-grow outline-none mr-2"
+        placeholder="Search product name or code here"
+        on:keyup="{doSearch}"
+        bind:this="{searchText}"
+        on:focus="{ (e) => e.target.value = '' }"
+      />
+    </div>
+    <button
+      on:click="{ () => { searchMode = false; filtered_prods = undefined; } }"
+      class="h-10 self-center"
+    >
+      <i class="fas fa-times mr-2"></i>
+    </button>
+  </div>
+  {:else}
+  <div transition:slide="{{ easing : quintInOut }}" class="{styles.navbar}" style="height: fit-content;">
+    <button class="w-12 h-12"></button>
+    <div class="flex-grow flex-col self-center">
+        <span
+          on:click="{ ()=> window.scrollTo({left: 0, top: 0, behavior: 'smooth'}) }"
+        >
+          {$session.outlet_name || 'getorders'}
+        </span>
+      {#if $session.table_selected && $session.table_selected.length>0 || $session.table_name}
+      <br>
+        Table: {$session.table_selected && $session.table_selected.length>0 ? $session.table_selected[0].name : $session.table_name}
+      {/if}
+    </div>
+    <button
+      on:mousedown="{ () => { searchMode = true; setTimeout( ()=> searchText.focus().setSelectionRange(0, 999), 1000); } }"
+      class="w-12 h-full"
+    >
+      <i class="fas fa-search"></i>
+    </button>
+  </div>
+  {/if} {#if filtered_prods}
+  <div
+    on:scroll|passive="{scroll}"
+    class="
+      flex-grow
+      overflow-y-auto
+      w-full
+      bg-white
+      scrollbar-w-2
+      scrollbar-track-gray-lighter
+      scrollbar-thumb-rounded
+      scrollbar-thumb-gray
+    "
+  >
+    {#each filtered_prods as prod}
+    <ListItem
+      type="{$session.list_style}"
+      product="{prod}"
+      on:click="{(e) => $modal = { view : Product, product : clone(e.detail)}}"
+    />
+    {/each}
+  </div>
+  {:else if $prod_list}
+  <Products />
+  {/if} {#if $cart_list.length>0}
+  <div
+    class="
+      flex-none
+      h-20
+      flex
+      w-full
+      bg-gray-200
+      border-t border-gray-300
+      p-3
+      text-white
+    "
+  >
+    <button
+      class="
+        bg-theme
+        text-center
+        rounded-md
+        capitalize
+        font-semibold
+        w-full
+        h-full
+        flex
+        shadow-md
+      "
+      on:click="{ () => $modal = { view : Cart } }"
+    >
+      <div class="flex-none w-1/2 px-2 text-left">
+        <i class="fas fa-shopping-cart pr-2"></i> {$cart_list.length}
+      </div>
+      <div class="flex-none w-1/2 text-right">RM{grand_total}</div>
+    </button>
+  </div>
+  {:else}
+    {#if $orders.length > 0}
+    <div
+      class="
+        flex-none
+        h-20
+        flex
+        w-full
+        bg-gray-200
+        border-t border-gray-300
+        p-3
+        text-white
+      "
+    >
+      <button
+        class="
+          bg-teal-400
+          text-center
+          rounded-md
+          capitalize
+          font-semibold
+          w-full
+          h-full
+          flex
+          shadow-md
+        "
+        on:click="{ () => $modal = { view : History } }"
+      >
+        <div class="flex-none w-1/2 px-2 text-left">
+          <i class="fas fa-shopping-basket pr-2"></i> Order History
+        </div>
+      </button>
+    </div>
+    {/if}
+  {/if}
+</div>
+{#if $modal.view}
+<svelte:component this="{$modal.view}" {...$modal} />
+{/if} {#if $loading==true}
+<div
+  class="bg-dark fixed h-full z-40 w-full table text-xl text-white text-center"
+>
+  <div class="table-cell align-middle">
+    <i class="fa fa-spin fa-spinner text-5xl" id="loading-icon"></i>
+    <p>One moment please..</p>
+  </div>
+</div>
+{/if}

@@ -1,0 +1,21 @@
+<script>
+  export var segments = [], selected = {}, value = "", style = {}, label = ""
+  function select(s) {
+    selected = s;
+    value = s.value;
+  }
+  function round(i) {
+    if (i == 0) return "rounded-l";
+    if (i == segments.length - 1) return "rounded-r";
+    return "";
+  }
+</script>
+
+<div class="{style.container}">
+  <label class="block text-xs uppercase text-gray-700 font-semibold mb-2 {style.label || 'w-20' }">{label}</label>
+  {#each segments as segment, i}
+  <button on:mousedown="{ () => select(segment) }" class="bg-gray-{ segment.value==value ? '600' : '200'} text-gray-{ segment.value==value ? '100' : '600'} font-bold text-sm shadow-md py-2 px-4 {round(i)}">
+    {segment.name}
+  </button>
+  {/each}
+</div>

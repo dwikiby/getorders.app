@@ -1,0 +1,280 @@
+<script>
+  import ModalView from "./components/ModalView.html";
+  import TextField from "./components/UIText.html";
+  import dayjs from "dayjs/esm";
+  import Thanks from "./ThankYou.html";
+  import iPay from "./iPay.html";
+  import Kiple from "./kiple.html";
+  import { onMount } from "svelte";
+
+  import {
+    fill_product,
+    cart_list,
+    api,
+    headers,
+    session,
+    modal,
+    table_selected,
+    customer,
+    guest_id,
+    loading,
+    uuid,
+    voucher,
+    fetch,
+    pop_modal,
+    orders
+  } from "./Helper.js";
+  customer.useLocalStorage();
+  var payMethod;
+  var payCounter;
+  var payOnline;
+  var cust_data = $customer,
+    validation = [],
+    show_validation = false,
+    pax = "",
+    temperature = "<37.2";
+  if (!cust_data.phone) cust_data.phone = "";
+  if (!cust_data.email) cust_data.email = "";
+  var mailformat = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
+  var step = 0,
+    tries = 0,
+    sent_status = 0;
+  var step_title = [
+    "",
+    "Covid Contact Tracing",
+    "Sending Your Orders..",
+    "Orders Sent",
+  ];
+  var onlinePayment = null;
+  var custDetails = null;
+
+  onMount(() => {
+    if ($orders.length != 0) {
+      cash_pay();
+    }
+  });
+  function verification() {
+    step = 2;
+  }
+  function order_status(order_id) {
+    if (tries > 3) {
+      step = 2;
+    } else {
+      tries++;
+      fetch(api("/guest/order"), { order_id: order_id })
+        .then(function (r) {
+          switch (r.status) {
+            case 1:
+              setTimeout(() => {
+                order_status(order_id);
+              }, 2500);
+              break;
+            case 2:
+              sent_status = 2;
+              step = 3;
+              break;
+          }
+        })
+        .catch((e) => {
+          setTimeout(() => {
+            order_status(order_id);
+          }, 2500);
+        });
+    }
+  }
+  function send_order() {
+    let paymentMethod = null;
+    if (!cust_data.name || cust_data.name == "") cust_data.name = "Guest";
+    $customer = cust_data;
+
+    let dataSet = {
+      customer: { ...$customer, uuid: $guest_id },
+      cart: $cart_list,
+      pax,
+      qr_remark: $session.qr_remark || false,
+      table_id: $table_selected,
+    };
+    step = 2;
+    if (pax == "") pax = "1";
+    if (onlinePayment != false) {
+      paymentMethod = $session.payments[0];
+      let paydirect = { paydirect: paymentMethod };
+      dataSet = { ...dataSet, ...paydirect };
+    }
+
+    fetch(api("/guest/checkout"), dataSet).then(function (response) {
+      if (onlinePayment != false) {
+        if (!response.invoice_id) {
+          if (response.inventory_error) {
+            var payload =
+              "Sorry but the items below have ran out of stock : \n\n";
+            response.inventory_error.forEach((e) => {
+              payload += `${e.name} (Stock : ${e.total_left})\n`;
+            });
+            alert(payload);
+          } else {
+            alert(
+              "An error occured while submitting your order. Please try again."
+            );
+          }
+          $loading = false;
+        } else if (response.payment_gateway.sig) {
+          $modal = {
+            view: response.payment_gateway.gateway == "ipay" ? iPay : Kiple,
+            data: response.payment_gateway,
+          };
+          $cart_list = [];
+          $loading = false;
+        } else if (response.payment_gateway.checkoutURI) {
+          document.location.href = response.payment_gateway.checkoutURI;
+        }
+      } else {
+        sent_status = 1;
+        sent_status = 2;
+        step = 3;
+        const expiryTime = dayjs().add(3,'hours').format('YYYY-MM-DD HH:mm:ss');
+        response.expiryTime=expiryTime;
+        $orders = [fill_product(response), ...$orders];
+      }
+    });
+  }
+  function cash_pay() {
+    onlinePayment = false;
+    custDetails = false;
+    send_order();
+  }
+  function online_pay(data) {
+    send_order();
+  }
+  function generate(invoice_id) {
+    console.log(invoice_id);
+  }
+  function reset() {
+    $cart_list = [];
+    $modal = {};
+  }
+  $: 
+  if (step > 1) {
+      setTimeout(function () {
+        reset();
+      }, 1000);
+    }
+  $:{
+      show_validation = false;
+      validation = [];
+      if (cust_data.phone == "") {
+        validation = [...validation, "Phone number is required."];
+      } else {
+        if (cust_data.phone.length < 9) {
+          validation = [...validation, "Please provide a valid phone number."];
+        }
+        if (cust_data.phone.match(/^[0-9]+$/) == null) {
+          validation = [...validation, "Please provide a valid phone number."];
+        }
+      }
+      
+
+      payMethod = $session.qr_payment_method
+        ? $session.qr_payment_method.length
+        : 0;
+      payCounter = $session.qr_payment_method
+        ? $session.qr_payment_method.includes("pay_at_counter")
+        : false;
+      payOnline = $session.qr_payment_method
+        ? $session.qr_payment_method.includes("online_payment")
+        : false;
+    }
+</script>
+<ModalView>
+  <div slot="title" class="px-4 pt-2 text-2xl">
+    {onlinePayment || custDetails ? 'Customer Details' : step_title[step]}
+  </div>
+  <div slot="content" class="p-2">
+    {#if step == 0} 
+      {#if onlinePayment == null}
+        {#if custDetails == null}
+          {#if payCounter == true || payMethod == 0 }
+            <button class="w-full px-2 bg-theme rounded-md shadow-md capitalize font-bold h-full text-white"
+              on:click="{$session.qr_customer_input ? () => {custDetails = true;} : cash_pay}">
+              <i class="fas fa-coins pr-2"></i> {$session.pay_counter_label || "Pay at Counter"}
+            </button>
+          {/if}
+          {#if payOnline == true }
+            <button class="w-full mt-3 px-2 bg-theme rounded-md shadow-md capitalize font-bold h-full text-white"
+              on:click="{ () => { onlinePayment = true; }}">
+              <i class="fas fa-credit-card pr-2"></i> Online Payment
+            </button>
+          {/if}
+          <button class="w-full mt-3 px-2 bg-gray-400 rounded-md shadow-md capitalize font-bold h-full text-black"
+            on:click="{() => { $modal = {}}}">
+            Cancel
+          </button>
+        {:else}
+          <TextField name="Name" bind:value="{cust_data.name}" placeholder="This Field is Required" />
+          <TextField name="Phone" bind:value="{cust_data.phone}" placeholder="This Field is Required"/>
+          <TextField name="Email" bind:value="{cust_data.email}" />
+          <button
+            class="w-full my-3 px-2 bg-theme { validation.length>0 ? 'opacity-25' : ''} rounded-md shadow-md capitalize font-bold h-full text-white"
+            disabled= "{ validation.length > 0 ? true : false }"
+            on:click="{cash_pay}">
+            Confirm
+          </button>
+        {/if}
+      {/if}
+      {#if onlinePayment == true }
+      <TextField name="Name" bind:value="{cust_data.name}" />
+      <TextField name="Phone" bind:value="{cust_data.phone}" />
+      <TextField name="Email" bind:value="{cust_data.email}" />
+      <button
+        class="w-full my-3 px-2 bg-theme { validation.length>0 ? 'opacity-25' : ''} rounded-md shadow-md capitalize font-bold h-full text-white"
+        disabled= "{ validation.length > 0 ? true : false }"
+        on:click="{online_pay}">
+        Confirm
+      </button>
+      {/if} 
+    {:else if step==2}
+    <div class="h-32 p-4 relative w-full flex items-center">
+      <div class="flex-none w-2/5 text-center">
+        <div class="w-10 h-10 rounded-full { sent_status==1 ? 'bg-green-400' : 'bg-gray-200'} mx-auto table mb-2">
+          {#if sent_status==1}
+          <i class="fas fa-check table-cell align-middle"></i>
+          {:else}
+          <i class="fas fa-spinner fa-spin table-cell align-middle"></i>
+          {/if}
+        </div>
+        <p class="text-sm font-semibold text-gray-600">
+          Orders<br />
+          Placed
+        </p>
+      </div>
+      <div class="flex-none w-1/5 h-1 bg-gray-300 -mt-10"></div>
+      <div class="flex-none w-2/5 text-center">
+        <div class="w-10 h-10 rounded-full { sent_status==2 ? 'bg-green-400' : 'bg-gray-200'} mx-auto table mb-2">
+          {#if sent_status==1}
+          <i class="fas fa-spinner fa-spin table-cell align-middle"></i>
+          {:else if sent_status==2}
+          <i class="fas fa-check table-cell align-middle"></i>
+          {:else}
+          <i class="fas fa-ellipsis-h table-cell align-middle"></i>
+          {/if}
+        </div>
+        <p class="text-sm font-semibold text-gray-600">
+          Orders<br />
+          Received
+        </p>
+      </div>
+    </div>
+    {:else}
+    <div class="h-32 p-4 relative">
+      <i class="absolute fas fa-smile z-0 text-gray-300 text-6xl right-0 bottom-0 pr-5"></i>
+      {$session.checkout_message || "Done. Please pay at counter after submitting order." }
+    </div>
+    <div class="h-24 flex w-full bg-white py-5 px-3">
+      <button class="w-full px-2 bg-theme shadow-lg rounded-lg capitalize font-bold h-full text-white"
+        on:click="{reset}">
+        Complete
+      </button>
+    </div>
+    {/if}
+  </div>
+</ModalView>

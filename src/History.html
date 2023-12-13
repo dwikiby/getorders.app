@@ -1,0 +1,68 @@
+<script>
+  import ModalView from "./components/ModalView.html";
+  import Checkout from "./Checkout.html";
+  import Submission from "./Submission.html";
+  import VoucherView from "./VoucherView.html";
+  import dayjs from "dayjs/esm";
+  import relativeTime from "dayjs/esm/plugin/relativeTime";
+  dayjs.extend(relativeTime);
+  import { fly, fade } from "svelte/transition";
+  import { quintInOut } from "svelte/easing";
+  import { cart_list, cart_total, session, modal, voucher, orders } from "./Helper.js";
+  import Product from "./Product.html";
+</script>
+<ModalView>
+  <div slot="content">
+    <p
+      class="text-center font-semibold text-lg text-gray-600 my-3 border-gray-200 border-dashed {$cart_list.length > 0 ? `pt-12 border-t-2` : ''}"
+    >
+      Order History
+    </p>
+    {#each $orders as order}
+    <div
+      class="rounded-lg bg-teal-400 text-white text-sm font-semibold m-2 p-2"
+    >
+      {dayjs().to(dayjs(order.createdAt))}
+    </div>
+    {#each order.cart as prod, i}
+    <div
+      class="flex { i<order.cart.length-1 ? 'border-b' : ''} mx-2 p-2 border-gray-200"
+    >
+      <div
+        class="flex-none w-10 h-10 text-center rounded-lg bg-gray-200 table text-sm text-gray-700"
+      >
+        <span class="table-cell align-middle">{prod.quantity}x</span>
+      </div>
+      <div class="flex-grow px-2">
+        <div class="font-semibold flex justify-between">
+          <span>{prod.name}</span>
+          <div class="pr-2">{prod.unit_price.toFixed(2)}</div>
+        </div>
+        {#if prod.remarks}
+        <p class="text-sm text-gray-700 italic">{prod.remarks}</p>
+        {/if} {#each prod.variant as v}
+        <p class="text-sm text-gray-700">{v.name}</p>
+        {/each} {#each prod.modifiers as mod}
+        <p class="text-sm text-gray-700">{mod.name} + {mod.amount}</p>
+        {/each} {#each prod.promo as promo}
+        <p class="text-sm text-theme">PROMO: {promo.name}</p>
+        {/each}
+      </div>
+    </div>
+    {/each}
+    <div class="w-full text-right px-8">
+      <span>Subtotal: RM{cart_total(order.cart).toFixed(2)}</span>
+    </div>
+    {/each}
+  </div>
+  <div slot="toolbar" class="shadow-md">
+    <div class="h-16 flex w-full p-2">
+      <button
+        class="w-full bg-gray-300 rounded-lg mr-2 font-bold h-full"
+        on:click="{ () => $modal = {} }"
+      >
+        <i class="fas fa-chevron-down"></i>
+      </button>
+    </div>
+  </div>
+</ModalView>

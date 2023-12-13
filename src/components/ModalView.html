@@ -1,0 +1,31 @@
+<script>
+  import { fly, fade } from 'svelte/transition';
+  import { quintInOut } from 'svelte/easing';
+  import { modal, pop_modal } from '../Helper.js'
+  import { onMount } from 'svelte';
+  export var style = {}, dismiss = true;
+  function close() {
+    if (dismiss != 'false') {
+      pop_modal()
+    }
+  }
+</script>
+<div class="bg-dark fixed h-full w-full z-20" transition:fade="{{ easing : quintInOut }}"></div>
+<div class="flex flex-col-reverse absolute w-full h-full antialiased z-30">
+  <div class="{ style.bottom || 'flex-none md:flex-grow' }" on:click="{close}"></div>
+  <div transition:fly="{{ y : 300, easing : quintInOut }}"
+    class="relative flex flex-col rounded-t-lg md:rounded-lg max-h-screen bg-white w-full self-center md:w-2/3 {style.body}">
+    <slot name="loader"></slot>
+    <div class="p-2 {style.title}">
+      <slot name="title"></slot>
+    </div>
+    <div
+      class="flex-grow overflow-y-scroll scrolling-touch scrollbar-w-2 scrollbar-track-gray-lighter scrollbar-thumb-rounded scrollbar-thumb-gray scrolling-touch {style.content}">
+      <slot name="content"></slot>
+    </div>
+    <div class="flex-none {style.toolbar}">
+      <slot name="toolbar"></slot>
+    </div>
+  </div>
+  <div class="{ style.top || 'flex-grow' }" on:click="{close}"></div>
+</div>
