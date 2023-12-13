@@ -1,13 +1,13 @@
 <script>
   export var type = "grid", product = {}
   var s3 = "https://s3.ap-southeast-1.amazonaws.com/assets.getorders/";
-  if (!product.variant) {
-    if (product.variants.length > 0) {
-      var v = product.variants[0]
-      product.variant = [v]
-      product.unit_price = v.price
-    }
-  }
+  // if (!product.variant) {
+  //   if (product.variants.length > 0) {
+  //     var v = product.variants[0]
+  //     product.variant = [v]
+  //     product.unit_price = v.price
+  //   }
+  // }
   import { createEventDispatcher } from 'svelte';
   const dispatch = createEventDispatcher();
   function prod_image(prod) {
@@ -22,7 +22,8 @@
   }
   function unit_price(prod) {
     var price = `${parseFloat(prod.unit_price).toFixed(2)}`.split(".");
-    return `<b class='text-base'>${price[0]}</b>.${price[1]}`;
+    `<b class='text-base'>${price[0]}</b>.${price[1]}`;
+    return `${price[0]}.${price[1]}`;
   }
   function prod_name(prod) {
     var title = prod.name;
@@ -31,6 +32,27 @@
     }
     return title;
   }
+  function initializePricingProduct(product) {
+  if (product.price_type === 0) {
+    if (product.variants.length > 0) {
+      product.variants.forEach(variant => {
+        if (variant.default) {
+          product.variant = [variant];
+          product.unit_price = variant.price;
+        }
+      });
+      if (!product.variant) {
+        product.variant = [product.variants[0]];
+        product.unit_price = product.variants[0].price;
+      }
+    } else {
+      product.unit_price = unit_price(product);
+    }
+  } else {
+    product.unit_price = unit_price(product);
+  }
+}
+initializePricingProduct(product);
 </script>
 <div class="w-full" on:mousedown="{() => dispatch('click', product)}" style="{ product.total_left == 0 || product.out_of_stock == true ? 'pointer-events:none;' : ''}">
 
@@ -60,7 +82,15 @@
           {#if product.total_left == 0 || product.out_of_stock == true}
           Out of Stock
           {:else}
-          RM{@html unit_price(product)}
+          {#if product.price_type === 0} 
+              {#if product.variant}
+                RM {parseFloat(product.variant[0].price).toFixed(2)}
+              {:else}
+                RM {unit_price(product)}
+              {/if} 
+            {:else} 
+              RM {unit_price(product)}
+            {/if}
           {/if}
         </p>
       </div>
@@ -79,7 +109,15 @@
           {#if product.total_left == 0 || product.out_of_stock == true}
           Out of Stock
           {:else}
-          RM{@html unit_price(product)}
+          {#if product.price_type === 0} 
+            {#if product.variant}
+              RM {parseFloat(product.variant[0].price).toFixed(2)}
+            {:else}
+              RM {unit_price(product)}
+            {/if} 
+          {:else} 
+            RM {unit_price(product)}
+          {/if}
           {/if}
       </p>
       {/if}
@@ -109,7 +147,15 @@
           {/if}
         </span>
         <span class="{product.out_of_stock == true ? 'invisible' : ''}">
-          <b> RM{@html unit_price(product)}</b> 
+          {#if product.price_type === 0} 
+              {#if product.variant}
+                RM {parseFloat(product.variant[0].price).toFixed(2)}
+              {:else}
+                RM {unit_price(product)}
+              {/if} 
+            {:else} 
+              RM {unit_price(product)}
+            {/if}
         </span>
       </div>
     </div>
